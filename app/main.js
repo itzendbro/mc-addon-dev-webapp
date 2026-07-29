@@ -23,7 +23,6 @@ function initApp(host) {
   const tabbar = $("#pas-tabbar");
   const editorHost = $("#pas-editor-host");
   const previewHost = $("#pas-preview-host");
-  const accessoryBar = $("#pas-accessory");
   const statusPath = $("#pas-status-path");
   const statusMeta = $("#pas-status-cursor");
   const statusLang = $("#pas-status-lang");
@@ -287,7 +286,6 @@ function initApp(host) {
     const node = activePath ? vfs.get(activePath) : null;
     if (!node) {
       editorHost.style.display = "none";
-      accessoryBar.style.display = "none";
       previewHost.style.display = "flex";
       previewHost.innerHTML = "";
       previewHost.appendChild(buildEmptyState());
@@ -299,14 +297,12 @@ function initApp(host) {
     if (node.isText) {
       previewHost.style.display = "none";
       editorHost.style.display = "block";
-      accessoryBar.style.display = "flex";
       editorManager.openFile(node.path, node.content ?? "", node.ext);
       statusLang.textContent = languageLabel(node.ext);
       const info = editorManager.getCursorInfo();
       statusMeta.textContent = `Ln ${info.line}, Col ${info.col} \u00B7 ${formatBytes(info.length)}`;
     } else {
       editorHost.style.display = "none";
-      accessoryBar.style.display = "none";
       previewHost.style.display = "flex";
       previewHost.innerHTML = "";
       previewHost.appendChild(buildBinaryPreview(node));
@@ -364,35 +360,6 @@ function initApp(host) {
       el("button", { class: "pas-btn pas-btn-primary", onclick: () => downloadSingleFile(node) }, ["Download File"]),
     ]);
   }
-
-  // ---- accessory toolbar (quick symbols for the on-screen keyboard) -------
-  const SYMBOLS = ["{", "}", "[", "]", '"', "'", ":", ",", ";", "(", ")", "<", ">", "=", "-", "_", "/", "|"];
-  SYMBOLS.forEach((sym) => {
-    accessoryBar.appendChild(
-      el("button", { class: "pas-acc-btn", onclick: () => editorManager.insertText(sym) }, [sym])
-    );
-  });
-  [
-    { label: "\u2B05", action: () => editorManager.moveCursor("left") },
-    { label: "\u27A1", action: () => editorManager.moveCursor("right") },
-    { label: "\u2B06", action: () => editorManager.moveCursor("up") },
-    { label: "\u2B07", action: () => editorManager.moveCursor("down") },
-    { label: "Home", action: () => editorManager.moveCursor("home") },
-    { label: "End", action: () => editorManager.moveCursor("end") },
-    { label: "Tab", action: () => editorManager.insertTab() },
-    { label: "\u21B6", action: () => editorManager.undo() },
-    { label: "\u21B7", action: () => editorManager.redo() },
-  ].forEach((btn) => {
-    accessoryBar.appendChild(el("button", { class: "pas-acc-btn pas-acc-btn-wide", onclick: btn.action }, [btn.label]));
-  });
-  accessoryBar.appendChild(el("span", { class: "pas-acc-sep" }));
-  [
-    { label: "!mbp", action: () => editorManager.insertText(buildManifestBP()) },
-    { label: "!mrp", action: () => editorManager.insertText(buildManifestRP()) },
-    { label: "!uuid", action: () => editorManager.insertText(uuidv4()) },
-  ].forEach((btn) => {
-    accessoryBar.appendChild(el("button", { class: "pas-acc-btn pas-acc-btn-magic", onclick: btn.action }, [btn.label]));
-  });
 
   // ---- topbar actions --------------------------------------------------
   $("#pas-new-file-btn").addEventListener("click", async () => {
@@ -504,7 +471,7 @@ function initApp(host) {
         <li><code>!mbp</code> \u2014 insert a Behavior Pack <b>manifest.json</b> with fresh UUIDs.</li>
         <li><code>!mrp</code> \u2014 insert a Resource Pack <b>manifest.json</b> with fresh UUIDs.</li>
         <li><code>!uuid</code> \u2014 insert a brand new UUID v4 at the cursor.</li>
-        <li>Type any of the above and tap the suggestion, or use the quick buttons in the toolbar above the keyboard.</li>
+        <li>Type any of the above and tap the suggestion that pops up.</li>
         <li>Start typing Minecraft component names like <code>minecraft:health</code> or JS like <code>world.after</code> for full snippet autocomplete.</li>
         <li>Tap the <b>\u22EE</b> next to any file or folder for rename, duplicate, download and delete actions.</li>
         <li>Your project auto-saves to this device. Use Export to download a real .zip/.mcaddon file.</li>
@@ -595,8 +562,6 @@ function buildShell() {
       <div id="pas-editor-host" class="pas-editor-host"></div>
       <div id="pas-preview-host" class="pas-preview-host"></div>
     </main>
-
-    <div id="pas-accessory" class="pas-accessory"></div>
 
     <footer class="pas-statusbar">
       <span id="pas-status-path" class="pas-status-path"></span>

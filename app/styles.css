@@ -208,44 +208,6 @@ code {
 .pas-preview-caption { font-size: 12.5px; color: var(--text-dim); word-break: break-all; }
 .pas-preview audio { width: 80vw; max-width: 380px; }
 
-/* ---- accessory toolbar (above keyboard) ---------------------------------- */
-.pas-accessory {
-  flex: none;
-  display: none;
-  gap: 6px;
-  overflow-x: auto;
-  align-items: center;
-  padding: 6px 8px;
-  background: var(--bg-panel-2);
-  border-top: 1px solid var(--border-soft);
-  border-bottom: 1px solid var(--border-soft);
-  scrollbar-width: none;
-}
-.pas-accessory::-webkit-scrollbar { display: none; }
-
-.pas-acc-btn {
-  flex: none;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 8px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background: #1e1e1e;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 14px;
-}
-.pas-acc-btn:active { background: var(--bg-active); }
-.pas-acc-btn-wide { font-size: 12px; padding: 0 10px; color: var(--text-dim); }
-.pas-acc-btn-magic {
-  background: #1a3652;
-  border-color: #2c5a82;
-  color: #8ecbff;
-  font-weight: 600;
-  font-size: 12px;
-}
-.pas-acc-sep { flex: none; width: 1px; height: 22px; background: var(--border); margin: 0 2px; }
-
 /* ---- status bar ----------------------------------------------------------- */
 .pas-statusbar {
   flex: none;
