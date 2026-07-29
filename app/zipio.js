@@ -1,10 +1,8 @@
 // ---------------------------------------------------------------------------
 // Import/export of .zip, .mcpack, .mcaddon archives using JSZip.
 // ---------------------------------------------------------------------------
-import JSZip from "jszip";
-import { extOf, isTextExt, isImageExt, isAudioExt, joinPath } from "./utils.js";
 
-export async function importArchiveIntoVFS(vfs, file, targetFolder) {
+async function importArchiveIntoVFS(vfs, file, targetFolder) {
   const zip = await JSZip.loadAsync(file);
   const entries = Object.values(zip.files);
   let count = 0;
@@ -26,7 +24,7 @@ export async function importArchiveIntoVFS(vfs, file, targetFolder) {
   return count;
 }
 
-export async function exportVFSAsZip(vfs, filename) {
+async function exportVFSAsZip(vfs, filename) {
   const zip = new JSZip();
   vfs.allFiles().forEach((node) => {
     if (node.isText) zip.file(node.path, node.content ?? "");
@@ -36,7 +34,7 @@ export async function exportVFSAsZip(vfs, filename) {
   downloadBlob(blob, filename);
 }
 
-export async function exportFolderAsPack(vfs, folderPath, filename) {
+async function exportFolderAsPack(vfs, folderPath, filename) {
   const zip = new JSZip();
   const prefixLen = folderPath ? folderPath.length + 1 : 0;
   vfs.allFiles().forEach((node) => {
@@ -49,7 +47,7 @@ export async function exportFolderAsPack(vfs, folderPath, filename) {
   downloadBlob(blob, filename);
 }
 
-export function downloadBlob(blob, filename) {
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -60,12 +58,11 @@ export function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-export async function downloadSingleFile(node) {
+async function downloadSingleFile(node) {
   let blob;
   if (node.isText) {
     blob = new Blob([node.content ?? ""], { type: "text/plain" });
   } else {
-    const { b64ToBytes } = await import("./utils.js");
     blob = new Blob([b64ToBytes(node.b64 ?? "")]);
   }
   downloadBlob(blob, node.name);

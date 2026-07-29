@@ -3,29 +3,8 @@
 // Wires together the virtual file system, VS Code style CodeMirror editor,
 // file explorer, import/export (JSZip) and Minecraft Bedrock snippets.
 // ---------------------------------------------------------------------------
-import "./styles.css";
-import { VFS } from "./fs.js";
-import { EditorManager } from "./editor.js";
-import { renderTree, fileIcon } from "./explorer.js";
-import { promptDialog, confirmDialog, actionSheet, infoDialog } from "./modals.js";
-import { importArchiveIntoVFS, exportVFSAsZip, exportFolderAsPack, downloadSingleFile } from "./zipio.js";
-import { buildManifestBP, buildManifestRP } from "./mcTemplates.js";
-import {
-  el,
-  toast,
-  uuidv4,
-  extOf,
-  joinPath,
-  isImageExt,
-  isAudioExt,
-  isTextExt,
-  mimeFor,
-  formatBytes,
-  debounce,
-  bytesToB64,
-} from "./utils.js";
 
-export function initApp(host) {
+function initApp(host) {
   host.innerHTML = "";
   host.appendChild(buildShell());
 

@@ -7,14 +7,50 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="theme-color" content="#1e1e1e" />
-    <meta name="description" content="Pocket Addon Studio — a VS Code style editor for building Minecraft Bedrock (MCPE/MCBE) add-ons right from your phone." />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet" />
+    <meta name="description" content="Pocket Addon Studio — a VS Code style editor for building Minecraft Bedrock (MCPE/MCBE) add-ons right from your phone. Plain HTML/CSS/JS, no build step, just open this file." />
     <title>Pocket Addon Studio — MCBE Add-on Editor</title>
+
+    <!-- CodeMirror 5 (vendored locally, no internet or build step needed) -->
+    <link rel="stylesheet" href="vendor/codemirror5/lib/codemirror.css" />
+    <link rel="stylesheet" href="vendor/codemirror5/addon/dialog/dialog.css" />
+    <link rel="stylesheet" href="vendor/codemirror5/addon/hint/show-hint.css" />
+    <link rel="stylesheet" href="vendor/codemirror5/theme/vscode-dark.css" />
+
+    <!-- App styles -->
+    <link rel="stylesheet" href="app/styles.css" />
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- ---- Vendored third-party libraries (no npm install required) ---- -->
+    <script src="vendor/jszip/jszip.min.js"></script>
+    <script src="vendor/codemirror5/lib/codemirror.js"></script>
+    <script src="vendor/codemirror5/mode/javascript/javascript.js"></script>
+    <script src="vendor/codemirror5/addon/edit/matchbrackets.js"></script>
+    <script src="vendor/codemirror5/addon/edit/closebrackets.js"></script>
+    <script src="vendor/codemirror5/addon/selection/active-line.js"></script>
+    <script src="vendor/codemirror5/addon/search/searchcursor.js"></script>
+    <script src="vendor/codemirror5/addon/search/match-highlighter.js"></script>
+    <script src="vendor/codemirror5/addon/dialog/dialog.js"></script>
+    <script src="vendor/codemirror5/addon/search/search.js"></script>
+    <script src="vendor/codemirror5/addon/hint/show-hint.js"></script>
+
+    <!-- ---- App source (plain JS, loaded in dependency order) ---- -->
+    <script src="app/utils.js"></script>
+    <script src="app/mcTemplates.js"></script>
+    <script src="app/mcCompletions.js"></script>
+    <script src="app/fs.js"></script>
+    <script src="app/editor.js"></script>
+    <script src="app/explorer.js"></script>
+    <script src="app/modals.js"></script>
+    <script src="app/zipio.js"></script>
+    <script src="app/main.js"></script>
+    <script>
+      // This project intentionally contains ALL application logic in plain
+      // HTML/CSS/JS files (no React, no JSX, no build tooling, no bundler).
+      // Everything needed to run is already vendored locally under ./vendor
+      // and ./app — just open this index.html file directly in a browser.
+      initApp(document.getElementById("root"));
+    </script>
   </body>
 </html>

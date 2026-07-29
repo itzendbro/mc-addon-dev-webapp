@@ -8,7 +8,7 @@
 // Each entry: { label, snippet, detail, type }
 // `snippet` uses CodeMirror snippet syntax: ${1:placeholder}, ${2:other}, $0 for final cursor.
 
-export const JSON_SNIPPETS = [
+const JSON_SNIPPETS = [
   // ---- manifest -----------------------------------------------------------
   { label: "format_version", snippet: '"format_version": ${1:2}', detail: "manifest field", type: "property" },
   { label: "header", snippet: '"header": {\n\t"name": "${1:pack.name}",\n\t"description": "${2:pack.description}",\n\t"uuid": "${3:uuid}",\n\t"version": [${4:1}, ${5:0}, ${6:0}],\n\t"min_engine_version": [${7:1}, ${8:21}, ${9:70}]\n}$0', detail: "manifest header block", type: "property" },
@@ -120,7 +120,7 @@ export const JSON_SNIPPETS = [
   { label: "version [1,0,0]", snippet: '"version": [${1:1}, ${2:0}, ${3:0}]', detail: "semantic version array", type: "property" },
 ];
 
-export const JS_SNIPPETS = [
+const JS_SNIPPETS = [
   { label: "import @minecraft/server", snippet: 'import { world, system } from "@minecraft/server";$0', detail: "import core script API", type: "keyword" },
   { label: "import @minecraft/server-ui", snippet: 'import { ActionFormData, ModalFormData, MessageFormData } from "@minecraft/server-ui";$0', detail: "import UI forms API", type: "keyword" },
   { label: "world.afterEvents.entityHurt", snippet: 'world.afterEvents.entityHurt.subscribe((event) => {\n\t${1:// event.hurtEntity, event.damageSource}\n});$0', detail: "subscribe to entity hurt", type: "function" },
@@ -161,4 +161,4 @@ export const JS_SNIPPETS = [
 // Snippet-style macros triggered by typing `!token` anywhere in the file,
 // regardless of the language mode. Handled specially because they need to
 // generate fresh UUIDs / whole-document-independent content.
-export const MAGIC_TRIGGERS = ["!mbp", "!mrp", "!uuid"];
+const MAGIC_TRIGGERS = ["!mbp", "!mrp", "!uuid"];

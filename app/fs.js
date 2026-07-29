@@ -2,7 +2,6 @@
 // A tiny in-memory virtual file system for the editor, persisted to
 // localStorage so work survives a page reload on a phone browser.
 // ---------------------------------------------------------------------------
-import { extOf, isTextExt, isImageExt, isAudioExt, bytesToB64, b64ToBytes } from "./utils.js";
 
 const STORAGE_KEY = "pas.project.v1";
 
@@ -12,7 +11,7 @@ const STORAGE_KEY = "pas.project.v1";
  * Folder entry shape:
  * { type: 'folder', path, children: Set(paths), open: bool }
  */
-export class VFS {
+class VFS {
   constructor() {
     this.nodes = new Map(); // path -> node
     this.listeners = new Set();
@@ -289,11 +288,11 @@ export class VFS {
   }
 }
 
-export function bytesForFile(node) {
+function bytesForFile(node) {
   if (node.isText) return new TextEncoder().encode(node.content ?? "");
   return b64ToBytes(node.b64 ?? "");
 }
 
-export function setBinaryContent(node, bytes) {
+function setBinaryContent(node, bytes) {
   node.b64 = bytesToB64(bytes);
 }

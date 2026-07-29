@@ -1,7 +1,6 @@
 // ---------------------------------------------------------------------------
 // Small reusable modal / bottom-sheet helpers (no external UI framework).
 // ---------------------------------------------------------------------------
-import { el } from "./utils.js";
 
 function overlayHost() {
   let host = document.getElementById("pas-modal-host");
@@ -32,7 +31,7 @@ function openOverlay(contentNode, opts = {}) {
   return { backdrop, sheet, close };
 }
 
-export function promptDialog({ title, label, value = "", placeholder = "", confirmText = "Create", validate }) {
+function promptDialog({ title, label, value = "", placeholder = "", confirmText = "Create", validate }) {
   return new Promise((resolve) => {
     const input = el("input", { class: "pas-input", type: "text", value, placeholder, autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
     const errorEl = el("div", { class: "pas-field-error" });
@@ -80,7 +79,7 @@ export function promptDialog({ title, label, value = "", placeholder = "", confi
   });
 }
 
-export function confirmDialog({ title, message, confirmText = "Delete", danger = true }) {
+function confirmDialog({ title, message, confirmText = "Delete", danger = true }) {
   return new Promise((resolve) => {
     const body = el("div", { class: "pas-sheet-body" }, [
       el("h3", { class: "pas-sheet-title" }, [title]),
@@ -98,7 +97,7 @@ export function confirmDialog({ title, message, confirmText = "Delete", danger =
 }
 
 // items: [{ label, icon, danger }] -> resolves index of chosen item or -1
-export function actionSheet({ title, items }) {
+function actionSheet({ title, items }) {
   return new Promise((resolve) => {
     const list = el(
       "div",
@@ -123,7 +122,7 @@ export function actionSheet({ title, items }) {
   });
 }
 
-export function infoDialog({ title, message, okText = "Got it" }) {
+function infoDialog({ title, message, okText = "Got it" }) {
   return new Promise((resolve) => {
     const body = el("div", { class: "pas-sheet-body" }, [
       el("h3", { class: "pas-sheet-title" }, [title]),

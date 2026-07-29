@@ -2,7 +2,7 @@
 // Small shared helpers used across the vanilla JS app.
 // ---------------------------------------------------------------------------
 
-export function uuidv4() {
+function uuidv4() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") {
     try {
       return window.crypto.randomUUID();
@@ -17,24 +17,24 @@ export function uuidv4() {
   });
 }
 
-export function extOf(name) {
+function extOf(name) {
   const clean = name.split("/").pop() || name;
   const idx = clean.lastIndexOf(".");
   if (idx <= 0) return "";
   return clean.slice(idx + 1).toLowerCase();
 }
 
-export function baseName(path) {
+function baseName(path) {
   return path.split("/").filter(Boolean).pop() || path;
 }
 
-export function dirName(path) {
+function dirName(path) {
   const parts = path.split("/").filter(Boolean);
   parts.pop();
   return parts.join("/");
 }
 
-export function joinPath(...parts) {
+function joinPath(...parts) {
   return parts
     .filter((p) => p !== undefined && p !== null && p !== "")
     .join("/")
@@ -42,7 +42,7 @@ export function joinPath(...parts) {
     .replace(/^\//, "");
 }
 
-export const TEXT_EXTENSIONS = new Set([
+const TEXT_EXTENSIONS = new Set([
   "json",
   "js",
   "mjs",
@@ -61,20 +61,20 @@ export const TEXT_EXTENSIONS = new Set([
   "yaml",
 ]);
 
-export const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "tga"]);
-export const AUDIO_EXTENSIONS = new Set(["mp3", "ogg", "wav"]);
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "tga"]);
+const AUDIO_EXTENSIONS = new Set(["mp3", "ogg", "wav"]);
 
-export function isTextExt(ext) {
+function isTextExt(ext) {
   return TEXT_EXTENSIONS.has(ext);
 }
-export function isImageExt(ext) {
+function isImageExt(ext) {
   return IMAGE_EXTENSIONS.has(ext);
 }
-export function isAudioExt(ext) {
+function isAudioExt(ext) {
   return AUDIO_EXTENSIONS.has(ext);
 }
 
-export function mimeFor(ext) {
+function mimeFor(ext) {
   const map = {
     png: "image/png",
     jpg: "image/jpeg",
@@ -91,7 +91,7 @@ export function mimeFor(ext) {
   return map[ext] || "application/octet-stream";
 }
 
-export function formatBytes(bytes) {
+function formatBytes(bytes) {
   if (!bytes && bytes !== 0) return "";
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];
@@ -104,7 +104,7 @@ export function formatBytes(bytes) {
   return `${val.toFixed(val < 10 ? 1 : 0)} ${units[i]}`;
 }
 
-export function debounce(fn, wait) {
+function debounce(fn, wait) {
   let t = null;
   return (...args) => {
     clearTimeout(t);
@@ -112,14 +112,14 @@ export function debounce(fn, wait) {
   };
 }
 
-export function b64ToBytes(b64) {
+function b64ToBytes(b64) {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
 
-export function bytesToB64(bytes) {
+function bytesToB64(bytes) {
   let bin = "";
   const chunk = 0x8000;
   for (let i = 0; i < bytes.length; i += chunk) {
@@ -128,7 +128,7 @@ export function bytesToB64(bytes) {
   return btoa(bin);
 }
 
-export function el(tag, attrs, children) {
+function el(tag, attrs, children) {
   const node = document.createElement(tag);
   if (attrs) {
     for (const [k, v] of Object.entries(attrs)) {
@@ -152,7 +152,7 @@ export function el(tag, attrs, children) {
   return node;
 }
 
-export function toast(message, opts) {
+function toast(message, opts) {
   const options = opts || {};
   const host = document.getElementById("pas-toast-host");
   if (!host) return;

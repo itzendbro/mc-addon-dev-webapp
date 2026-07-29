@@ -1,7 +1,6 @@
 // ---------------------------------------------------------------------------
 // Sidebar file-explorer tree rendering (VS Code style, touch friendly).
 // ---------------------------------------------------------------------------
-import { el } from "./utils.js";
 
 const BADGES = {
   json: { text: "{}", cls: "badge-json" },
@@ -27,12 +26,12 @@ function badgeFor(ext) {
   return BADGES[ext] || { text: "\u2022", cls: "badge-default" };
 }
 
-export function fileIcon(ext) {
+function fileIcon(ext) {
   const b = badgeFor(ext);
   return el("span", { class: `pas-badge ${b.cls}` }, [b.text]);
 }
 
-export function renderTree(vfs, container, state, handlers) {
+function renderTree(vfs, container, state, handlers) {
   container.innerHTML = "";
   const root = el("ul", { class: "pas-tree" });
   const kids = vfs.listChildren("");

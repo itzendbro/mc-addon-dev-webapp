@@ -1,9 +1,8 @@
-import { uuidv4 } from "./utils.js";
 
 // Replaces every unique `UUidN` style token in a template with a freshly
 // generated UUID v4, re-using the same generated value if the same token
 // appears more than once in the template.
-export function fillUuidTokens(text) {
+function fillUuidTokens(text) {
   const map = new Map();
   return text.replace(/UUid\d+/g, (token) => {
     if (!map.has(token)) map.set(token, uuidv4());
@@ -11,7 +10,7 @@ export function fillUuidTokens(text) {
   });
 }
 
-export const MANIFEST_BP_TEMPLATE = `{
+const MANIFEST_BP_TEMPLATE = `{
     "format_version": 2,
     "header": {
         "name": "pack.name",
@@ -56,7 +55,7 @@ export const MANIFEST_BP_TEMPLATE = `{
     ]
 }`;
 
-export const MANIFEST_RP_TEMPLATE = `{
+const MANIFEST_RP_TEMPLATE = `{
     "format_version": 2,
     "header": {
         "name": "pack.name",
@@ -89,10 +88,10 @@ export const MANIFEST_RP_TEMPLATE = `{
     ]
 }`;
 
-export function buildManifestBP() {
+function buildManifestBP() {
   return fillUuidTokens(MANIFEST_BP_TEMPLATE);
 }
 
-export function buildManifestRP() {
+function buildManifestRP() {
   return fillUuidTokens(MANIFEST_RP_TEMPLATE);
 }
