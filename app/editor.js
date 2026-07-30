@@ -250,7 +250,36 @@ class EditorManager {
     this.activePath = path;
     this.cm.swapDoc(entry.doc);
     this.cm.setOption("lineWrapping", this.wrapEnabled);
+    this._refreshWhenVisible();
     this.cm.focus();
+  }
+
+  // The editor's container starts out `display: none` (the empty-state
+  // screen is shown first, before any file is open). CodeMirror measures
+  // character/line dimensions from the live DOM, and a `display: none`
+  // element reports zero width/height for all of those measurements. If we
+  // never re-measure after the container becomes visible, CodeMirror's
+  // internal view stays stuck exactly where it was at construction time
+  // (an empty, zero-size view), which is why the very first file you open
+  // looks populated but silently can't be typed in or backspaced at all --
+  // every edit gets computed against that stale zero-size layout and
+  // dropped. Calling refresh() re-measures against the now-visible
+  // container, but that only works once the browser has actually finished
+  // laying out the display:block change, so we retry across a couple of
+  // animation frames rather than assuming a single frame is always enough
+  // (timing here can vary across phones/browsers).
+  _refreshWhenVisible(attempt) {
+    this.cm.refresh();
+    const n = attempt || 0;
+    if (n >= 4) return;
+    requestAnimationFrame(() => this._refreshWhenVisible(n + 1));
+  }
+
+  // Called by the app shell right after it flips the editor container from
+  // display:none to display:block (or resizes it), so CodeMirror can
+  // re-measure its layout against the now-visible/resized DOM.
+  refresh() {
+    this._refreshWhenVisible();
   }
 
   captureActive() {
