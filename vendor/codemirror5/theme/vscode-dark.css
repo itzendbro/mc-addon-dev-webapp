@@ -64,7 +64,7 @@
   border: 1px solid var(--border, #454545);
   color: var(--text, #d4d4d4);
   font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
-  font-size: 15px;
+  font-size: 19px;
   border-radius: 8px;
   padding: 4px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
@@ -98,19 +98,19 @@
 }
 .pas-hint-icon {
   flex: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12.5px;
+  font-size: 16.5px;
   font-weight: 700;
   line-height: 1;
   color: #1e1e1e;
   background: var(--text-dim, #9d9d9d);
 }
-.pas-hint-icon-magic { background: #c586c0; font-size: 12px; }
+.pas-hint-icon-magic { background: #c586c0; font-size: 16px; }
 .pas-hint-icon-property { background: #9cdcfe; }
 .pas-hint-icon-keyword { background: #569cd6; color: #ffffff; }
 .pas-hint-icon-function { background: #dcdcaa; font-style: italic; }
@@ -128,7 +128,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-dim, #9d9d9d);
-  font-size: 13.5px;
+  font-size: 17.5px;
   font-style: normal;
   margin-left: 4px;
 }

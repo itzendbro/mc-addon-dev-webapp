@@ -187,6 +187,15 @@ class EditorManager {
         this.opts.onChange(this.activePath, cm.getValue());
       }
       this._maybeAutocomplete(changeObj);
+      this._lastChangeOrigin = changeObj.origin;
+    });
+    // "changes" (the batched/end-of-operation event) fires *after*
+    // CodeMirror's own internal logic has already reset the mobile shadow
+    // textarea for this edit, so re-syncing it here is what actually
+    // sticks -- doing it inside the "change" handler above gets silently
+    // overwritten a moment later.
+    this.cm.on("changes", () => {
+      this._syncMobileShadowInput(this._lastChangeOrigin);
     });
     this.cm.on("cursorActivity", () => {
       if (this.activePath && this.opts.onCursor) {
@@ -210,6 +219,47 @@ class EditorManager {
     if (!/[\w":!.$-]/.test(text.slice(-1))) return;
     clearTimeout(this._hintTimer);
     this._hintTimer = setTimeout(() => this.showHints(), 30);
+  }
+
+  // ---------------------------------------------------------------------
+  // Phone keyboards don't send real key events for backspace/delete --
+  // they diff the hidden shadow <textarea> CodeMirror mirrors the document
+  // into against its previous value. That mirror is kept in sync
+  // automatically while the user types, but whenever *our own code*
+  // programmatically edits the document (picking an autocomplete
+  // suggestion, inserting a !mbp/!mrp/!uuid snippet, an accessory button,
+  // etc.) CodeMirror resets that shadow textarea back to empty, since it
+  // doesn't know the edit came from "typing". With nothing left in the
+  // textarea, the next real backspace on a phone has nothing to diff
+  // against, so the browser has nothing to report and delete/backspace
+  // silently stops working until you tap elsewhere to move the cursor.
+  // Re-seeding the shadow textarea with the real text right before the
+  // cursor after any non-typed change keeps backspace working afterward.
+  // ---------------------------------------------------------------------
+  _syncMobileShadowInput(origin) {
+    if (origin === "+input" || origin === "*compose") return;
+    const cm = this.cm;
+    if (cm.getOption("inputStyle") !== "textarea") return;
+    if (cm.somethingSelected()) return;
+    const input = cm.display && cm.display.input;
+    const textarea = input && input.textarea;
+    if (!textarea) return;
+    const cursor = cm.getCursor();
+    // Mirror the current line up to the cursor into the shadow textarea,
+    // same as CodeMirror does while the user is typing normally. This is
+    // deliberately kept to a single line: CodeMirror itself empties the
+    // shadow textarea whenever it contains a newline (see poll() in
+    // codemirror.js), so including previous lines here would immediately
+    // get wiped again on the very next keystroke and defeat the fix.
+    const lineText = cm.getLine(cursor.line) || "";
+    const before = lineText.slice(Math.max(0, cursor.ch - 300), cursor.ch);
+    textarea.value = before;
+    input.prevInput = before;
+    try {
+      textarea.selectionStart = textarea.selectionEnd = before.length;
+    } catch (e) {
+      /* ignore -- some browsers throw if the textarea isn't focused/visible */
+    }
   }
 
   showHints(force) {
