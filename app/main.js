@@ -322,7 +322,7 @@ function initApp(host) {
 
   function buildEmptyState() {
     return el("div", { class: "pas-empty-state" }, [
-      el("div", { class: "pas-empty-emoji" }, ["\u26CF\uFE0F"]),
+      el("img", { class: "pas-empty-logo", src: "favicon.png", alt: "Pocket Addon Studio" }),
       el("h2", {}, ["Pocket Addon Studio"]),
       el("p", {}, [
         "Build Minecraft Bedrock (MCPE/MCBE) add-ons right from your phone. Import files, a folder, or a .zip / .mcpack / .mcaddon / .mcworld to get started \u2014 or create a brand new file.",

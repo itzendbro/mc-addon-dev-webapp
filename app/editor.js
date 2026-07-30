@@ -155,7 +155,15 @@ class EditorManager {
       value: "",
       mode: "text/plain",
       theme: "vscode-dark",
-      lineNumbers: true,
+      // Line numbers removed entirely (not just hidden). CodeMirror renders
+      // the gutter as a non-editable div interleaved between every line
+      // inside the same editable surface, which is what made mobile
+      // backspace-at-start-of-line and native text selection unreliable
+      // (the OS/keyboard's caret & selection logic gets confused crossing
+      // those non-editable boundaries) -- broadening the upstream
+      // Android-only workaround for this wasn't enough to fix it on every
+      // device, so removing the gutter altogether is the reliable fix.
+      lineNumbers: false,
       lineWrapping: this.wrapEnabled,
       indentUnit: 4,
       tabSize: 4,

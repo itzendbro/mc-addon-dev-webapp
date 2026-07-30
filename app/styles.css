@@ -183,6 +183,13 @@ code {
   padding: 20px;
 }
 .pas-empty-emoji { font-size: 44px; margin-bottom: 8px; }
+.pas-empty-logo {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  object-fit: contain;
+}
 .pas-empty-state h2 { color: var(--text); margin: 6px 0; font-size: 20px; }
 .pas-empty-state p { font-size: 13.5px; line-height: 1.6; }
 .pas-empty-actions {
