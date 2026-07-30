@@ -51,17 +51,84 @@
 .cm-s-vscode-dark .cm-invalidchar { color: #f44747; }
 .cm-s-vscode-dark .CodeMirror-searching { background: #613214; }
 
-.cm-s-vscode-dark .CodeMirror-hints {
-  background: #252526;
-  border: 1px solid #454545;
-  color: #d4d4d4;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+/* ---------------------------------------------------------------------- */
+/* Autocomplete ("show-hint") popup, restyled to match the app's own       */
+/* VS Code inspired palette (defined in app/styles.css :root). Note this   */
+/* popup is appended to <body>, not nested inside .cm-s-vscode-dark, so it */
+/* must be themed via its own ".vscode-dark" class (added automatically by */
+/* CodeMirror from the editor's `theme` option) rather than a descendant   */
+/* selector.                                                               */
+/* ---------------------------------------------------------------------- */
+.CodeMirror-hints.vscode-dark {
+  background: var(--bg-panel, #252526);
+  border: 1px solid var(--border, #454545);
+  color: var(--text, #d4d4d4);
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
   font-size: 13px;
-  border-radius: 6px;
-  box-shadow: 0 8px 24px #00000060;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.03) inset;
 }
-.cm-s-vscode-dark .CodeMirror-hint { padding: 6px 8px; }
-.cm-s-vscode-dark li.CodeMirror-hint-active {
-  background: #04395e;
+.CodeMirror-hints.vscode-dark::-webkit-scrollbar { width: 8px; }
+.CodeMirror-hints.vscode-dark::-webkit-scrollbar-thumb {
+  background: var(--border, #454545);
+  border-radius: 6px;
+}
+
+.CodeMirror-hints.vscode-dark .CodeMirror-hint {
+  padding: 0;
+  border-radius: 5px;
+  color: var(--text, #d4d4d4);
+}
+.CodeMirror-hints.vscode-dark li.CodeMirror-hint-active {
+  background: var(--accent, #0e639c);
   color: #ffffff;
+}
+.CodeMirror-hints.vscode-dark li.CodeMirror-hint-active .pas-hint-detail {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Custom row layout: [icon] label ......... detail */
+.pas-hint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+.pas-hint-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: #1e1e1e;
+  background: var(--text-dim, #9d9d9d);
+}
+.pas-hint-icon-magic { background: #c586c0; font-size: 12px; }
+.pas-hint-icon-property { background: #9cdcfe; }
+.pas-hint-icon-keyword { background: #569cd6; color: #ffffff; }
+.pas-hint-icon-function { background: #dcdcaa; font-style: italic; }
+.pas-hint-icon-class { background: #4ec9b0; }
+.pas-hint-icon-type { background: #4ec9b0; }
+.pas-hint-icon-enum { background: #d7ba7d; }
+.pas-hint-label {
+  flex: none;
+  color: inherit;
+  font-weight: 500;
+}
+.pas-hint-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-dim, #9d9d9d);
+  font-size: 11.5px;
+  font-style: normal;
+  margin-left: 4px;
 }

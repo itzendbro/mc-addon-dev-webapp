@@ -56,6 +56,41 @@ const MAGIC_HINTS = [
   { trigger: "!uuid", build: () => uuidv4(), detail: "Insert a new random UUID v4" },
 ];
 
+// ---------------------------------------------------------------------------
+// VS Code style suggestion-widget row renderer: a small type icon on the
+// left, the label, then a dimmed detail string -- instead of CodeMirror's
+// default single line of plain text.
+// ---------------------------------------------------------------------------
+const HINT_ICONS = {
+  magic: "\u2728",
+  property: "\u2022",
+  keyword: "K",
+  function: "\u0192",
+  class: "C",
+  type: "T",
+  enum: "E",
+};
+
+function renderHintRow(icon, label, detail) {
+  return (elt) => {
+    elt.classList.add("pas-hint-row");
+    const iconEl = document.createElement("span");
+    iconEl.className = `pas-hint-icon pas-hint-icon-${icon in HINT_ICONS ? icon : "property"}`;
+    iconEl.textContent = HINT_ICONS[icon] || HINT_ICONS.property;
+    const labelEl = document.createElement("span");
+    labelEl.className = "pas-hint-label";
+    labelEl.textContent = label;
+    elt.appendChild(iconEl);
+    elt.appendChild(labelEl);
+    if (detail) {
+      const detailEl = document.createElement("span");
+      detailEl.className = "pas-hint-detail";
+      detailEl.textContent = detail;
+      elt.appendChild(detailEl);
+    }
+  };
+}
+
 function buildHintList(cm, snippets, magicOnly) {
   const cursor = cm.getCursor();
   const line = cm.getLine(cursor.line);
@@ -68,7 +103,7 @@ function buildHintList(cm, snippets, magicOnly) {
     const word = magicMatch[0];
     const list = MAGIC_HINTS.filter((m) => m.trigger.startsWith(word)).map((m) => ({
       text: m.trigger,
-      displayText: `${m.trigger} \u2014 ${m.detail}`,
+      render: renderHintRow("magic", m.trigger, m.detail),
       hint: (editor, self) => {
         const built = m.build();
         editor.replaceRange(built, { line: cursor.line, ch: start }, cursor);
@@ -89,7 +124,7 @@ function buildHintList(cm, snippets, magicOnly) {
   if (!matches.length) return null;
   const list = matches.slice(0, 60).map((s) => ({
     text: s.label,
-    displayText: `${s.label}${s.detail ? "  \u2014 " + s.detail : ""}`,
+    render: renderHintRow(s.type || "property", s.label, s.detail),
     hint: (editor) => {
       const { text, cursorOffset } = parseSnippet(s.snippet);
       const from = { line: cursor.line, ch: start };

@@ -336,6 +336,7 @@ function initApp(host) {
       el("div", { class: "pas-empty-tips" }, [
         el("p", {}, [el("strong", {}, ["Tip:"]), " type ", el("code", {}, ["!mbp"]), " in any file for a behavior pack manifest, ", el("code", {}, ["!mrp"]), " for a resource pack manifest, or ", el("code", {}, ["!uuid"]), " for a fresh UUID v4."]),
       ]),
+      el("p", { class: "pas-empty-author" }, ["Author shadid234"]),
     ]);
   }
 
