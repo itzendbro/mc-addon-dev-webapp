@@ -247,13 +247,25 @@ class EditorManager {
   // `contextForPath` in mcCompletions.js) so unrelated Bedrock JSON tags
   // don't clutter every file. Files whose path doesn't match a recognised
   // convention fall back to the full JSON snippet list rather than showing
-  // nothing.
+  // nothing. Within manifest.json specifically, entries additionally tagged
+  // with `packType: "bp"`/`"rp"` (e.g. the script module/dependency tags,
+  // which only make sense in a Behavior Pack manifest, or `raytraced`/
+  // `subpacks`, which are Resource Pack only) are further filtered using
+  // `packTypeForPath` -- the nearest ancestor folder named like a BP/RP
+  // folder (see mcCompletions.js) -- so a manifest inside a "MyAddon_RP"
+  // folder no longer suggests behavior-pack-only script module snippets,
+  // and vice versa. Untagged manifest entries (header, uuid, version, ...)
+  // are shared by both pack types and always shown.
   _snippetsForActiveFile(ext) {
     if (ext === "js" || ext === "ts" || ext === "mjs" || ext === "cjs") return JS_SNIPPETS;
     if (ext !== "json") return null;
     const ctx = contextForPath(this.activePath);
-    if (!ctx) return JSON_SNIPPETS;
-    return JSON_SNIPPETS.filter((s) => !s.context || s.context === ctx);
+    let list = ctx ? JSON_SNIPPETS.filter((s) => !s.context || s.context === ctx) : JSON_SNIPPETS;
+    if (ctx === "manifest") {
+      const packType = packTypeForPath(this.activePath);
+      if (packType) list = list.filter((s) => !s.packType || s.packType === packType);
+    }
+    return list;
   }
 
   hasState(path) {

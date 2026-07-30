@@ -11,21 +11,21 @@ const JSON_SNIPPETS = [
   { label: "format_version", snippet: '"format_version": ${1:2}', detail: "manifest field", type: "property", context: "manifest" },
   { label: "header", snippet: '"header": {\n\t"name": "${1:pack.name}",\n\t"description": "${2:pack.description}",\n\t"uuid": "${3:uuid}",\n\t"version": [${4:1}, ${5:0}, ${6:0}],\n\t"min_engine_version": [${7:1}, ${8:21}, ${9:70}]\n}$0', detail: "manifest header block", type: "property", context: "manifest" },
   { label: "modules", snippet: '"modules": [\n\t{\n\t\t"type": "${1:data}",\n\t\t"uuid": "${2:uuid}",\n\t\t"version": [${3:1}, ${4:0}, ${5:0}]\n\t}\n]$0', detail: "manifest modules block", type: "property", context: "manifest" },
-  { label: "module: data", snippet: '{\n\t"description": "${1:pack.description}",\n\t"type": "data",\n\t"uuid": "${2:uuid}",\n\t"version": [${3:1}, ${4:0}, ${5:0}]\n}$0', detail: "behavior module", type: "keyword", context: "manifest" },
-  { label: "module: script", snippet: '{\n\t"type": "script",\n\t"language": "javascript",\n\t"uuid": "${1:uuid}",\n\t"entry": "${2:scripts/main.js}",\n\t"version": [${3:1}, ${4:0}, ${5:0}]\n}$0', detail: "script module", type: "keyword", context: "manifest" },
-  { label: "module: resources", snippet: '{\n\t"type": "resources",\n\t"uuid": "${1:uuid}",\n\t"version": [${2:1}, ${3:0}, ${4:0}]\n}$0', detail: "resource module", type: "keyword", context: "manifest" },
-  { label: "module: client_data", snippet: '{\n\t"type": "client_data",\n\t"uuid": "${1:uuid}",\n\t"version": [${2:1}, ${3:0}, ${4:0}]\n}$0', detail: "client data module", type: "keyword", context: "manifest" },
+  { label: "module: data", snippet: '{\n\t"description": "${1:pack.description}",\n\t"type": "data",\n\t"uuid": "${2:uuid}",\n\t"version": [${3:1}, ${4:0}, ${5:0}]\n}$0', detail: "behavior module", type: "keyword", context: "manifest", packType: "bp" },
+  { label: "module: script", snippet: '{\n\t"type": "script",\n\t"language": "javascript",\n\t"uuid": "${1:uuid}",\n\t"entry": "${2:scripts/main.js}",\n\t"version": [${3:1}, ${4:0}, ${5:0}]\n}$0', detail: "script module", type: "keyword", context: "manifest", packType: "bp" },
+  { label: "module: resources", snippet: '{\n\t"type": "resources",\n\t"uuid": "${1:uuid}",\n\t"version": [${2:1}, ${3:0}, ${4:0}]\n}$0', detail: "resource module", type: "keyword", context: "manifest", packType: "rp" },
+  { label: "module: client_data", snippet: '{\n\t"type": "client_data",\n\t"uuid": "${1:uuid}",\n\t"version": [${2:1}, ${3:0}, ${4:0}]\n}$0', detail: "client data module", type: "keyword", context: "manifest", packType: "bp" },
   { label: "dependencies", snippet: '"dependencies": [\n\t{\n\t\t"uuid": "${1:uuid}",\n\t\t"version": [${2:1}, ${3:0}, ${4:0}]\n\t}\n]$0', detail: "manifest dependencies", type: "property", context: "manifest" },
-  { label: "dependency: @minecraft/server", snippet: '{\n\t"module_name": "@minecraft/server",\n\t"version": "${1:1.19.0}"\n}$0', detail: "script API dependency", type: "keyword", context: "manifest" },
-  { label: "dependency: @minecraft/server-ui", snippet: '{\n\t"module_name": "@minecraft/server-ui",\n\t"version": "${1:1.3.0}"\n}$0', detail: "script API dependency", type: "keyword", context: "manifest" },
-  { label: "dependency: @minecraft/server-net", snippet: '{\n\t"module_name": "@minecraft/server-net",\n\t"version": "${1:1.0.0}"\n}$0', detail: "script API dependency", type: "keyword", context: "manifest" },
+  { label: "dependency: @minecraft/server", snippet: '{\n\t"module_name": "@minecraft/server",\n\t"version": "${1:1.19.0}"\n}$0', detail: "script API dependency", type: "keyword", context: "manifest", packType: "bp" },
+  { label: "dependency: @minecraft/server-ui", snippet: '{\n\t"module_name": "@minecraft/server-ui",\n\t"version": "${1:1.3.0}"\n}$0', detail: "script API dependency", type: "keyword", context: "manifest", packType: "bp" },
+  { label: "dependency: @minecraft/server-net", snippet: '{\n\t"module_name": "@minecraft/server-net",\n\t"version": "${1:1.0.0}"\n}$0', detail: "script API dependency", type: "keyword", context: "manifest", packType: "bp" },
   { label: "capabilities", snippet: '"capabilities": ["${1:script_eval}"]$0', detail: "manifest capabilities", type: "property", context: "manifest" },
-  { label: "capability: script_eval", snippet: '"script_eval"', detail: "capability", type: "keyword", context: "manifest" },
+  { label: "capability: script_eval", snippet: '"script_eval"', detail: "capability", type: "keyword", context: "manifest", packType: "bp" },
   { label: "capability: chemistry", snippet: '"chemistry"', detail: "capability", type: "keyword", context: "manifest" },
-  { label: "capability: raytraced", snippet: '"raytraced"', detail: "capability", type: "keyword", context: "manifest" },
+  { label: "capability: raytraced", snippet: '"raytraced"', detail: "capability", type: "keyword", context: "manifest", packType: "rp" },
   { label: "capability: editorExtension", snippet: '"editorExtension"', detail: "capability", type: "keyword", context: "manifest" },
   { label: "metadata", snippet: '"metadata": {\n\t"authors": ["${1:your name}"]\n}$0', detail: "manifest metadata", type: "property", context: "manifest" },
-  { label: "subpacks", snippet: '"subpacks": [\n\t{\n\t\t"folder_name": "${1:folder A}",\n\t\t"name": "${2:sub pack name}",\n\t\t"memory_tier": ${3:1}\n\t}\n]$0', detail: "resource pack subpacks", type: "property", context: "manifest" },
+  { label: "subpacks", snippet: '"subpacks": [\n\t{\n\t\t"folder_name": "${1:folder A}",\n\t\t"name": "${2:sub pack name}",\n\t\t"memory_tier": ${3:1}\n\t}\n]$0', detail: "resource pack subpacks", type: "property", context: "manifest", packType: "rp" },
   // ---- entity ---------------------------------------------------------------
   { label: "minecraft:entity", snippet: '"minecraft:entity": {\n\t"description": {\n\t\t"identifier": "${1:namespace}:${2:entity_name}",\n\t\t"is_spawnable": true,\n\t\t"is_summonable": true,\n\t\t"is_experimental": false\n\t},\n\t"component_groups": {},\n\t"components": {\n\t\t$0\n\t},\n\t"events": {}\n}', detail: "behavior entity root", type: "type", context: "entity" },
   { label: "minecraft:client_entity", snippet: '"minecraft:client_entity": {\n\t"description": {\n\t\t"identifier": "${1:namespace}:${2:entity_name}",\n\t\t"materials": { "default": "entity_alphatest" },\n\t\t"textures": { "default": "textures/entity/${2:entity_name}" },\n\t\t"geometry": { "default": "geometry.${2:entity_name}" },\n\t\t"render_controllers": ["controller.render.default"],\n\t\t"spawn_egg": { "texture": "${2:entity_name}" }\n\t}\n}', detail: "resource client entity root", type: "type", context: "client_entity" },
@@ -151,6 +151,60 @@ const JS_SNIPPETS = [
 const MAGIC_TRIGGERS = ["!mbp", "!mrp", "!uuid"];
 
 // ---------------------------------------------------------------------------
+// Behavior Pack / Resource Pack folder detection.
+//
+// Add-on projects almost never agree on a single folder layout -- the BP/RP
+// folder can sit right at the project root, or a level or two deeper
+// (folder1/BP, folder1/folder2/BP, ...), and its *name* is usually either
+// exactly "bp"/"rp" (or a full word like "behavior"/"resource"), or a longer
+// project-specific name with the pack type tacked on the end, separated by
+// a space or underscore -- e.g. "MyAddon_BP", "MyAddon behavior pack",
+// "my_addon_resource_pack", "CoolAddonRP". We only ever treat the pack-type
+// token as a match when it is the *whole* folder name or is clearly
+// separated from the rest of the name (never a bare substring), so folders
+// like "warp" or "harpoon" don't get misdetected as an RP folder just for
+// containing "rp"/"harp" characters.
+//
+// This is used to (a) tell a behavior-pack entities/ file apart from a
+// resource-pack entities/ file, and (b) narrow manifest.json suggestions
+// down to only the module/dependency/capability tags relevant to whichever
+// side of the add-on the manifest actually lives in.
+// ---------------------------------------------------------------------------
+const BP_FOLDER_SUFFIXES = ["bp", "behavior", "behaviour", "behavior pack", "behaviour pack"];
+const RP_FOLDER_SUFFIXES = ["rp", "resource", "resources", "resource pack", "resources pack"];
+
+function folderNameMatchesSuffix(lowerFolderName, suffix) {
+  // Underscores and spaces are treated as the same separator, so
+  // "resource_pack", "resource pack" and even a mixed "my_addon resource_pack"
+  // all normalize to the same thing before comparing.
+  const normalized = lowerFolderName.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  if (normalized === suffix) return true;
+  return normalized.endsWith(" " + suffix);
+}
+
+function packTypeForFolderName(folderName) {
+  const lower = (folderName || "").toLowerCase();
+  if (BP_FOLDER_SUFFIXES.some((s) => folderNameMatchesSuffix(lower, s))) return "bp";
+  if (RP_FOLDER_SUFFIXES.some((s) => folderNameMatchesSuffix(lower, s))) return "rp";
+  return null;
+}
+
+// Walks every ancestor folder of `path`, from the one closest to the file up
+// to the project root, and returns "bp"/"rp" for the nearest one whose name
+// matches a known Behavior/Resource Pack naming convention -- or null if the
+// project doesn't name its pack folders in a way we recognise.
+function packTypeForPath(path) {
+  if (!path) return null;
+  const segments = path.split("/").filter(Boolean);
+  const folders = segments.slice(0, -1); // exclude the file name itself
+  for (let i = folders.length - 1; i >= 0; i--) {
+    const type = packTypeForFolderName(folders[i]);
+    if (type) return type;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Works out which `context` bucket (see the `context:` tags on JSON_SNIPPETS
 // above) a given file path belongs to, purely from its name/folder -- so the
 // autocomplete list only shows manifest tags in manifest.json, entity
@@ -182,10 +236,11 @@ function contextForPath(path) {
   if (has("entities")) {
     // Behavior pack entity files ("minecraft:entity") and resource pack
     // client entity files ("minecraft:client_entity") both conventionally
-    // live in an "entities" folder, so lean on common resource-pack folder
-    // naming (RP / resource_pack / resourcepack) to tell them apart.
-    const isResourceSide = segments.some((seg) => seg === "rp" || seg.includes("resource_pack") || seg.includes("resourcepack") || seg.endsWith("_rp"));
-    return isResourceSide ? "client_entity" : "entity";
+    // live in an "entities" folder, so use the BP/RP folder-name detector
+    // above (rather than a narrow one-off check) to tell them apart -- it
+    // also correctly handles the entities/ folder being nested a level or
+    // two below the actual BP/RP folder.
+    return packTypeForPath(path) === "rp" ? "client_entity" : "entity";
   }
   return null;
 }
