@@ -66,9 +66,22 @@ function promptDialog({ title, label, value = "", placeholder = "", confirmText 
     const ov = openOverlay(body, { className: "pas-sheet-compact" });
     setTimeout(() => {
       input.focus();
-      const dot = value.lastIndexOf(".");
-      if (dot > 0) input.setSelectionRange(0, dot);
-      else input.select();
+      // Select the ENTIRE default value (not just the part before the
+      // extension). We used to only select up to the last "." so a user
+      // could type a new name while keeping the ".json"/".js" extension,
+      // but partial selection set via setSelectionRange() is unreliable on
+      // real phone keyboards -- the OS keyboard's own selection/composition
+      // state frequently doesn't stay in sync with a JS-driven partial
+      // selection, especially right as the keyboard is opening. That could
+      // leave stray leftover characters from the old extension after
+      // backspacing (e.g. typing over "new_file" but leaving ".js" behind
+      // from ".json"), producing a file with the wrong extension. A full
+      // select() is the same simple, reliable behavior already used for
+      // the "New Folder" prompt below and has none of that ambiguity: the
+      // whole suggested name is selected, and typing anything fully
+      // replaces it -- so whatever the user types (including the
+      // extension) is exactly what they get.
+      input.select();
     }, 60);
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
