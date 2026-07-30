@@ -129,6 +129,13 @@ class EditorManager {
       matchBrackets: true,
       autoCloseBrackets: true,
       highlightSelectionMatches: { showToken: false, annotateScrollbar: false },
+      // On phones CodeMirror 5 defaults to a "contenteditable" input mode.
+      // In that mode, keystrokes typed via the on-screen keyboard only sync
+      // to the document once the current IME composition is committed (e.g.
+      // once you tap a space or a suggestion), so our live autocomplete
+      // never sees the in-progress word and never opens. Forcing the classic
+      // hidden-textarea input style fixes this and matches desktop behavior.
+      inputStyle: "textarea",
       extraKeys: {
         "Ctrl-Space": "autocomplete",
         Tab: (cm) => {
@@ -154,12 +161,18 @@ class EditorManager {
   }
 
   _maybeAutocomplete(changeObj) {
-    if (!changeObj || changeObj.origin !== "+input") return;
-    const text = changeObj.text && changeObj.text[0];
+    if (!changeObj) return;
+    // Real typing comes in as "+input" on desktop keyboards, but phone
+    // on-screen keyboards (Gboard, Samsung Keyboard, iOS predictive text)
+    // route ordinary typing through IME composition, which CodeMirror tags
+    // as "*compose" instead. We need to react to both so autocomplete works
+    // on mobile too.
+    if (changeObj.origin !== "+input" && changeObj.origin !== "*compose") return;
+    const text = changeObj.text && changeObj.text[changeObj.text.length - 1];
     if (!text) return;
     // Only trigger on word-ish characters / quote / colon / bang so we don't
     // spam a hint popup on every keystroke (e.g. spaces, newlines).
-    if (!/[\w":!.$-]/.test(text)) return;
+    if (!/[\w":!.$-]/.test(text.slice(-1))) return;
     clearTimeout(this._hintTimer);
     this._hintTimer = setTimeout(() => this.showHints(), 30);
   }
