@@ -38,7 +38,7 @@ function renderTree(vfs, container, state, handlers) {
   if (kids.length === 0) {
     root.appendChild(
       el("li", { class: "pas-tree-empty" }, [
-        "No files yet. Use Import below to add files, a folder, or a .zip / .mcpack / .mcaddon.",
+        "No files yet. Use Import below to add files, a folder, or a .zip / .mcpack / .mcaddon / .mcworld.",
       ])
     );
   } else {

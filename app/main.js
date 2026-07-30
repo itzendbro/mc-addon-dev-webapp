@@ -116,7 +116,7 @@ function initApp(host) {
           { label: "New File Here", icon: "\u2795" },
           { label: "New Folder Here", icon: "\u{1F4C1}" },
           { label: "Import Files Here", icon: "\u2B07\uFE0F" },
-          { label: "Import Archive Here (.zip/.mcpack/.mcaddon)", icon: "\u{1F4E6}" },
+          { label: "Import Archive Here (.zip/.mcpack/.mcaddon/.mcworld)", icon: "\u{1F4E6}" },
           { label: "Rename / Move", icon: "\u270F\uFE0F" },
           { label: "Download Folder as .zip", icon: "\u{1F4E5}" },
           { label: "Download Folder as .mcpack", icon: "\u{1F4E5}" },
@@ -325,12 +325,12 @@ function initApp(host) {
       el("div", { class: "pas-empty-emoji" }, ["\u26CF\uFE0F"]),
       el("h2", {}, ["Pocket Addon Studio"]),
       el("p", {}, [
-        "Build Minecraft Bedrock (MCPE/MCBE) add-ons right from your phone. Import files, a folder, or a .zip / .mcpack / .mcaddon to get started \u2014 or create a brand new file.",
+        "Build Minecraft Bedrock (MCPE/MCBE) add-ons right from your phone. Import files, a folder, or a .zip / .mcpack / .mcaddon / .mcworld to get started \u2014 or create a brand new file.",
       ]),
       el("div", { class: "pas-empty-actions" }, [
         el("button", { class: "pas-btn pas-btn-primary", onclick: () => { importTarget = ""; fileInput.click(); } }, ["Import Files"]),
         el("button", { class: "pas-btn pas-btn-ghost", onclick: () => { importTarget = ""; folderInput.click(); } }, ["Import Folder"]),
-        el("button", { class: "pas-btn pas-btn-ghost", onclick: () => { importTarget = ""; archiveInput.click(); } }, ["Import .zip/.mcpack/.mcaddon"]),
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: () => { importTarget = ""; archiveInput.click(); } }, ["Import .zip/.mcpack/.mcaddon/.mcworld"]),
         el("button", { class: "pas-btn pas-btn-ghost", onclick: () => createFileFlow("") }, ["New File"]),
       ]),
       el("div", { class: "pas-empty-tips" }, [
@@ -384,7 +384,7 @@ function initApp(host) {
       items: [
         { label: "Import Files", icon: "\u2795" },
         { label: "Import Folder", icon: "\u{1F4C1}" },
-        { label: "Import .zip / .mcpack / .mcaddon", icon: "\u{1F4E6}" },
+        { label: "Import .zip / .mcpack / .mcaddon / .mcworld", icon: "\u{1F4E6}" },
       ],
     });
     importTarget = "";
@@ -508,6 +508,12 @@ function initApp(host) {
   async function importFileList(files, target, useRelativePath) {
     if (!files.length) return;
     let count = 0;
+    // Importing a whole folder (webkitdirectory) can bring in many nested
+    // subfolders at once -- start those collapsed so the tree doesn't dump
+    // everything open. Plain "Import Files" doesn't create new subfolders
+    // (files land directly in the current target folder), so this only
+    // matters for the folder-import path.
+    const collapsedFolders = !!useRelativePath;
     for (const file of files) {
       const relPath = useRelativePath ? file.webkitRelativePath || file.name : file.name;
       const ext = extOf(relPath);
@@ -515,10 +521,10 @@ function initApp(host) {
       try {
         if (isImageExt(ext) || isAudioExt(ext) || (!isTextExt(ext) && (await looksBinary(file)))) {
           const buf = await file.arrayBuffer();
-          vfs.createFileAt(fullPath, bytesToB64(new Uint8Array(buf)), { isText: false });
+          vfs.createFileAt(fullPath, bytesToB64(new Uint8Array(buf)), { isText: false, collapsedFolders });
         } else {
           const text = await file.text();
-          vfs.createFileAt(fullPath, text, { isText: true });
+          vfs.createFileAt(fullPath, text, { isText: true, collapsedFolders });
         }
         count++;
       } catch (err) {
@@ -584,7 +590,7 @@ function buildShell() {
     <input id="pas-file-input" type="file" multiple hidden
       accept=".js,.mjs,.cjs,.ts,.json,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tga,.mp3,.ogg,.wav,.md,.txt,.lang,.mcfunction,.material,.csv,.xml,.yml,.yaml" />
     <input id="pas-folder-input" type="file" multiple hidden webkitdirectory directory mozdirectory />
-    <input id="pas-archive-input" type="file" hidden accept=".zip,.mcpack,.mcaddon,application/zip" />
+    <input id="pas-archive-input" type="file" hidden accept=".zip,.mcpack,.mcaddon,.mcworld,application/zip" />
 
     <div id="pas-toast-host" class="pas-toast-host"></div>
   `;

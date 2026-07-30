@@ -50,10 +50,16 @@ class VFS {
     return parts[parts.length - 1] || "";
   }
 
-  ensureFolder(path) {
+  // `collapsed: true` makes newly created folders start closed (used when
+  // bulk-importing a folder/.zip/.mcpack/.mcaddon/.mcworld, so the tree
+  // doesn't dump every nested folder open at once) instead of the normal
+  // open-by-default behavior for folders created one at a time by hand.
+  // Only applies to folders actually created here -- an already-existing
+  // folder's open/closed state is left untouched.
+  ensureFolder(path, opts = {}) {
     if (path === "" || this.nodes.has(path)) return this.nodes.get(path);
-    const parent = this.ensureFolder(this.parentPath(path));
-    const node = { type: "folder", path, name: this.nameOf(path), children: new Set(), open: true };
+    const parent = this.ensureFolder(this.parentPath(path), opts);
+    const node = { type: "folder", path, name: this.nameOf(path), children: new Set(), open: !opts.collapsed };
     this.nodes.set(path, node);
     parent.children.add(path);
     return node;
@@ -96,10 +102,12 @@ class VFS {
   }
 
   // Creates or overwrites a file at an *exact* path (used by archive import,
-  // where relative paths inside the zip must be preserved as-is).
+  // where relative paths inside the zip must be preserved as-is). Pass
+  // `collapsedFolders: true` so any parent folders auto-created along the
+  // way start collapsed rather than the usual open-by-default.
   createFileAt(path, content, opts = {}) {
     if (this.nodes.has(path)) this.delete(path);
-    const parent = this.ensureFolder(this.parentPath(path));
+    const parent = this.ensureFolder(this.parentPath(path), { collapsed: opts.collapsedFolders });
     const ext = extOf(path);
     const isText = opts.isText !== undefined ? opts.isText : isTextExt(ext) || (!isImageExt(ext) && !isAudioExt(ext));
     const node = {

@@ -14,10 +14,10 @@ async function importArchiveIntoVFS(vfs, file, targetFolder) {
     const text = isTextExt(ext) || (!isImageExt(ext) && !isAudioExt(ext));
     if (text) {
       const content = await entry.async("string");
-      vfs.createFileAt(fullPath, content, { isText: true });
+      vfs.createFileAt(fullPath, content, { isText: true, collapsedFolders: true });
     } else {
       const b64 = await entry.async("base64");
-      vfs.createFileAt(fullPath, b64, { isText: false });
+      vfs.createFileAt(fullPath, b64, { isText: false, collapsedFolders: true });
     }
     count++;
   }
