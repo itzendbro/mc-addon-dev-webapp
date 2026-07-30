@@ -8866,7 +8866,24 @@
     });
     on(div, "compositionend", function (e) {
       if (this$1.composing) {
-        if (e.data != this$1.composing.data) { this$1.readFromDOMSoon(); }
+        // Upstream only re-reads the DOM here if `e.data` differs from the
+        // text the composition started with, on the assumption that an
+        // unchanged composition means nothing happened. On Android Chrome,
+        // though, a plain Backspace keypress (with no IME involved at all)
+        // is sometimes nondeterministically wrapped in its own composition
+        // that starts and ends with the same empty `data` -- see
+        // https://github.com/codemirror/dev/issues/355, where CodeMirror's
+        // own maintainer confirmed "Chrome wraps backspace actions in
+        // compositions" on Android. Because the deletion the user actually
+        // made is invisible to that `e.data` comparison, CodeMirror never
+        // reads the real (already-mutated) DOM back into its model here --
+        // the document silently keeps the deleted text internally, and the
+        // very next re-render (e.g. scrolling, or any other edit) repaints
+        // the stale content, making backspaced text visibly "come back".
+        // Unconditionally scheduling a DOM read fixes that without any
+        // downside: if nothing actually changed, updateFromDOM()/
+        // pollContent() below is a cheap no-op.
+        this$1.readFromDOMSoon();
         this$1.composing.done = true;
       }
     });

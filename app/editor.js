@@ -231,13 +231,29 @@ class EditorManager {
   showHints(force) {
     const doc = this.docs.get(this.activePath);
     const ext = doc ? doc.ext : "";
-    const snippets = ext === "json" ? JSON_SNIPPETS : ext === "js" || ext === "ts" || ext === "mjs" || ext === "cjs" ? JS_SNIPPETS : null;
+    const snippets = this._snippetsForActiveFile(ext);
     const cm = this.cm;
     CodeMirror.showHint(cm, () => buildHintList(cm, snippets, false), {
       completeSingle: false,
       alignWithWord: true,
       closeOnUnfocus: true,
     });
+  }
+
+  // Picks the autocomplete list for the currently open file: JS/TS files
+  // only ever see the scripting API snippets, and JSON files are further
+  // narrowed down by the file's path/name (manifest.json only gets manifest
+  // tags, an entities/*.json file only gets entity component tags, etc, via
+  // `contextForPath` in mcCompletions.js) so unrelated Bedrock JSON tags
+  // don't clutter every file. Files whose path doesn't match a recognised
+  // convention fall back to the full JSON snippet list rather than showing
+  // nothing.
+  _snippetsForActiveFile(ext) {
+    if (ext === "js" || ext === "ts" || ext === "mjs" || ext === "cjs") return JS_SNIPPETS;
+    if (ext !== "json") return null;
+    const ctx = contextForPath(this.activePath);
+    if (!ctx) return JSON_SNIPPETS;
+    return JSON_SNIPPETS.filter((s) => !s.context || s.context === ctx);
   }
 
   hasState(path) {
