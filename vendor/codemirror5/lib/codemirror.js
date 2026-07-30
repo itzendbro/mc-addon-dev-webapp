@@ -9071,7 +9071,17 @@
     // Because Android doesn't allow us to actually detect backspace
     // presses in a sane way, this code checks for when that happens
     // and simulates a backspace press in this case.
-    if (android && chrome && this.cm.display.gutterSpecs.length && isInGutter(sel.anchorNode)) {
+    //
+    // Upstream only applied this on Android+Chrome, but the same failure
+    // mode (the OS/keyboard's native caret navigation landing the
+    // selection inside the non-editable line-number gutter div instead of
+    // merging the two lines) has been reported on other mobile browsers
+    // and keyboards too (e.g. Chrome + SwiftKey, Samsung Internet, iOS
+    // Safari) since it's really a generic consequence of interleaving
+    // contenteditable="false" gutter nodes between editable lines, not a
+    // single-browser quirk. Broaden the guard to any mobile device with a
+    // gutter so backspacing across lines stays reliable everywhere.
+    if (mobile && this.cm.display.gutterSpecs.length && isInGutter(sel.anchorNode)) {
       this.cm.triggerOnKeyDown({type: "keydown", keyCode: 8, preventDefault: Math.abs});
       this.blur();
       this.focus();
