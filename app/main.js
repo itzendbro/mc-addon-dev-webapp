@@ -464,16 +464,14 @@ function initApp(host) {
       items: [
         { label: "Rename Project", icon: "\u270F\uFE0F" },
         { label: `Word Wrap: ${wrapToggleBtn.dataset.on === "1" ? "On" : "Off"}`, icon: "\u21A9" },
-        { label: `Line Numbers: ${editorManager.lineNumbersEnabled ? "On" : "Off"}`, icon: "\u{1F522}" },
         { label: "New Project (clear everything)", icon: "\u{1F5D1}\uFE0F", danger: true },
         { label: "Help & Shortcuts", icon: "\u2753" },
       ],
     });
     if (choice === 0) return renameProjectFlow();
     if (choice === 1) return toggleWrap();
-    if (choice === 2) return editorManager.toggleLineNumbers();
-    if (choice === 3) return newProjectFlow();
-    if (choice === 4) return showHelp();
+    if (choice === 2) return newProjectFlow();
+    if (choice === 3) return showHelp();
   });
   wrapToggleBtn.addEventListener("click", toggleWrap);
 
