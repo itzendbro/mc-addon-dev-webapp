@@ -31,6 +31,22 @@ const JSON_SNIPPETS = [
   { label: "minecraft:client_entity", snippet: '"format_version": "${1:1.10.0}",\n"minecraft:client_entity": {\n\t"description": {\n\t\t"identifier": "${2:namespace}:${3:entity_name}",\n\t\t"materials": { "default": "entity_alphatest" },\n\t\t"textures": { "default": "textures/entity/${3:entity_name}" },\n\t\t"geometry": { "default": "geometry.${3:entity_name}" },\n\t\t"render_controllers": ["controller.render.default"],\n\t\t"spawn_egg": { "texture": "${3:entity_name}" }\n\t}\n}', detail: "resource client entity root (with format_version)", type: "type", context: "client_entity" },
   { label: "format_version (entity)", snippet: '"format_version": "${1:1.21.80}"', detail: "top-level format_version field for this entity file", type: "property", context: "entity" },
   { label: "format_version (client entity)", snippet: '"format_version": "${1:1.10.0}"', detail: "top-level format_version field for this client entity file", type: "property", context: "client_entity" },
+  { label: "materials", snippet: '"materials": { "${1:default}": "${2:entity_alphatest}" }$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "textures", snippet: '"textures": { "${1:default}": "textures/entity/${2:texture_name}" }$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "geometry", snippet: '"geometry": { "${1:default}": "geometry.${2:name}" }$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "animations (client entity)", snippet: '"animations": {\n\t"${1:short_name}": "animation.${2:entity}.${3:name}"\n}$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "animation_controllers (client entity)", snippet: '"animation_controllers": [\n\t{ "${1:short_name}": "controller.animation.${2:entity}.${3:name}" }\n]$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "render_controllers (client entity)", snippet: '"render_controllers": ["controller.render.${1:name}"]$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "locators", snippet: '"locators": {\n\t"${1:lead}": { "${2:head}": [${3:0.0}, ${4:14.0}, ${5:-6.0}] }\n}$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "scripts (client entity)", snippet: '"scripts": {\n\t"pre_animation": ["${1:variable.example = 0;}"],\n\t"scale": "${2:1.0}"\n}$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "particle_effects (client entity)", snippet: '"particle_effects": {\n\t"${1:short_name}": "${2:namespace}:${3:particle_name}"\n}$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "sound_effects (client entity)", snippet: '"sound_effects": {\n\t"${1:short_name}": "${2:mob.entity.sound}"\n}$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "spawn_egg (colors)", snippet: '"spawn_egg": {\n\t"base_color": "${1:#505152}",\n\t"overlay_color": "${2:#3b9dff}"\n}$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "spawn_egg (texture)", snippet: '"spawn_egg": {\n\t"texture": "${1:spawn_egg}",\n\t"texture_index": ${2:0}\n}$0', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "enable_attachables", snippet: '"enable_attachables": ${1:true}', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "hide_armor", snippet: '"hide_armor": ${1:true}', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "held_item_ignores_lighting", snippet: '"held_item_ignores_lighting": ${1:true}', detail: "client entity description field", type: "property", context: "client_entity" },
+  { label: "min_engine_version (client entity)", snippet: '"min_engine_version": "${1:1.8.0}"', detail: "client entity description field", type: "property", context: "client_entity" },
   { label: "minecraft:health", snippet: '"minecraft:health": {\n\t"value": ${1:20},\n\t"max": ${2:20}\n}$0', detail: "entity component", type: "property", context: "entity" },
   { label: "minecraft:collision_box", snippet: '"minecraft:collision_box": {\n\t"width": ${1:0.6},\n\t"height": ${2:1.8}\n}$0', detail: "entity/block component", type: "property", context: "entity" },
   { label: "minecraft:physics", snippet: '"minecraft:physics": {}$0', detail: "entity component", type: "property", context: "entity" },
@@ -334,6 +350,20 @@ const JSON_SNIPPETS = [
   { label: "minecraft:tags", snippet: '"minecraft:tags": {\n\t"tags": ["${1:minecraft:is_food}"]\n}$0', detail: "item component", type: "property", context: "item" },
   { label: "minecraft:throwable", snippet: '"minecraft:throwable": {\n\t"do_swing_animation": ${1:true},\n\t"launch_power_scale": ${2:1},\n\t"max_launch_power": ${3:1}\n}$0', detail: "item component", type: "property", context: "item" },
   { label: "minecraft:use_modifiers", snippet: '"minecraft:use_modifiers": {\n\t"use_duration": ${1:1.6},\n\t"movement_modifier": ${2:0.35}\n}$0', detail: "item component", type: "property", context: "item" },
+  // ---- attachables (resource pack) -----------------------------------------
+  { label: "minecraft:attachable", snippet: '"format_version": "${1:1.10.0}",\n"minecraft:attachable": {\n\t"description": {\n\t\t"identifier": "${2:namespace}:${3:item_name}",\n\t\t"materials": { "default": "entity_alphatest" },\n\t\t"textures": { "default": "textures/attachables/${3:item_name}" },\n\t\t"geometry": { "default": "geometry.${3:item_name}" },\n\t\t"render_controllers": ["controller.render.item_default"]\n\t}\n}', detail: "attachable root (with format_version)", type: "type", context: "attachable" },
+  { label: "format_version (attachable)", snippet: '"format_version": "${1:1.10.0}"', detail: "top-level format_version field for this attachable file", type: "property", context: "attachable" },
+  { label: "materials (attachable)", snippet: '"materials": { "${1:default}": "${2:entity_alphatest}" }$0', detail: "attachable description field", type: "property", context: "attachable" },
+  { label: "textures (attachable)", snippet: '"textures": { "${1:default}": "textures/attachables/${2:texture_name}" }$0', detail: "attachable description field", type: "property", context: "attachable" },
+  { label: "geometry (attachable)", snippet: '"geometry": { "${1:default}": "geometry.${2:name}" }$0', detail: "attachable description field", type: "property", context: "attachable" },
+  { label: "animations (attachable)", snippet: '"animations": {\n\t"${1:short_name}": "animation.${2:name}"\n}$0', detail: "attachable description field", type: "property", context: "attachable" },
+  { label: "render_controllers (attachable)", snippet: '"render_controllers": ["controller.render.${1:name}"]$0', detail: "attachable description field", type: "property", context: "attachable" },
+  { label: "scripts (attachable)", snippet: '"scripts": {\n\t"parent_setup": "${1:variable.helmet_layer_visible = 0.0;}"\n}$0', detail: "attachable description field", type: "property", context: "attachable" },
+  { label: "particle_effects (attachable)", snippet: '"particle_effects": {\n\t"${1:short_name}": "${2:namespace}:${3:particle_name}"\n}$0', detail: "attachable description field", type: "property", context: "attachable" },
+  { label: "sound_effects (attachable)", snippet: '"sound_effects": {\n\t"${1:short_name}": "${2:item.sound}"\n}$0', detail: "attachable description field", type: "property", context: "attachable" },
+  { label: "enable_attachables (attachable)", snippet: '"enable_attachables": ${1:true}', detail: "attachable description field", type: "property", context: "attachable" },
+  { label: "item (attachable)", snippet: '"item": "${1:namespace:item_name}"', detail: "attachable description field - item identifier this attachable is for", type: "property", context: "attachable" },
+  { label: "min_engine_version (attachable)", snippet: '"min_engine_version": ${1:1}', detail: "attachable description field", type: "property", context: "attachable" },
   // ---- recipes ------------------------------------------------------------
   { label: "minecraft:recipe_shaped", snippet: '"format_version": "${1:1.21.80}",\n"minecraft:recipe_shaped": {\n\t"description": { "identifier": "${2:namespace}:${3:recipe_id}" },\n\t"tags": ["crafting_table"],\n\t"pattern": ["${4:AAA}", "${5:ABA}", "${6:AAA}"],\n\t"key": { "A": { "item": "${7:minecraft:stick}" } },\n\t"result": { "item": "${8:namespace:item_name}" }\n}', detail: "shaped crafting recipe (with format_version)", type: "type", context: "recipe" },
   { label: "minecraft:recipe_shapeless", snippet: '"format_version": "${1:1.21.80}",\n"minecraft:recipe_shapeless": {\n\t"description": { "identifier": "${2:namespace}:${3:recipe_id}" },\n\t"tags": ["crafting_table"],\n\t"ingredients": [{ "item": "${4:minecraft:stick}" }],\n\t"result": { "item": "${5:namespace:item_name}" }\n}', detail: "shapeless crafting recipe (with format_version)", type: "type", context: "recipe" },
@@ -342,18 +372,102 @@ const JSON_SNIPPETS = [
   { label: "format_version (recipe)", snippet: '"format_version": "${1:1.21.80}"', detail: "top-level format_version field for this recipe file", type: "property", context: "recipe" },
   // ---- animation / render controllers -------------------------------------
   { label: "animations (root)", snippet: '"format_version": "1.10.0",\n"animations": {\n\t"animation.${1:entity}.${2:name}": {\n\t\t"loop": true,\n\t\t"bones": {}\n\t}\n}', detail: ".animation.json root", type: "type", context: "animation" },
+  { label: "loop", snippet: '"loop": ${1:true}', detail: "animation field - true, false, or 'hold_on_last_frame'", type: "property", context: "animation" },
+  { label: "anim_time_update", snippet: '"anim_time_update": "${1:query.anim_time + query.delta_time}"', detail: "animation field - controls how time advances", type: "property", context: "animation" },
+  { label: "loop_delay", snippet: '"loop_delay": "${1:1.0}"', detail: "animation field - seconds to wait before looping", type: "property", context: "animation" },
+  { label: "start_delay", snippet: '"start_delay": "${1:0.0}"', detail: "animation field - seconds to wait before playing", type: "property", context: "animation" },
+  { label: "blend_weight", snippet: '"blend_weight": "${1:1.0}"', detail: "animation field", type: "property", context: "animation" },
+  { label: "override_previous_animation", snippet: '"override_previous_animation": ${1:true}', detail: "animation field - reset bones to default pose first", type: "property", context: "animation" },
+  { label: "animation_length", snippet: '"animation_length": ${1:1.0}', detail: "animation field - override calculated animation length in seconds", type: "property", context: "animation" },
+  { label: "bones", snippet: '"bones": {\n\t"${1:bone_name}": {\n\t\t"rotation": ["${2:0}", "${3:0}", "${4:0}"]\n\t}\n}$0', detail: "animation bones block", type: "property", context: "animation" },
+  { label: "bone rotation/position/scale", snippet: '"${1:bone_name}": {\n\t"rotation": ["${2:0}", "${3:0}", "${4:0}"],\n\t"position": ["${5:0}", "${6:0}", "${7:0}"]\n}$0', detail: "single bone keyframe entry", type: "property", context: "animation" },
+  { label: "particle_effects (animation)", snippet: '"particle_effects": {\n\t"${1:0.0}": {\n\t\t"effect": "${2:short_name}",\n\t\t"locator": "${3:locator_name}"\n\t}\n}$0', detail: "animation timed particle effects, keyed by time", type: "property", context: "animation" },
+  { label: "sound_effects (animation)", snippet: '"sound_effects": {\n\t"${1:0.0}": {\n\t\t"effect": "${2:short_name}"\n\t}\n}$0', detail: "animation timed sound effects, keyed by time", type: "property", context: "animation" },
+  { label: "timeline", snippet: '"timeline": {\n\t"${1:0.0}": ["${2:@s query.event_name}"]\n}$0', detail: "animation timeline events, keyed by time", type: "property", context: "animation" },
   { label: "animation_controllers (root)", snippet: '"format_version": "1.10.0",\n"animation_controllers": {\n\t"controller.animation.${1:entity}.${2:name}": {\n\t\t"initial_state": "${3:default}",\n\t\t"states": {\n\t\t\t"${3:default}": {\n\t\t\t\t"animations": [],\n\t\t\t\t"transitions": []\n\t\t\t}\n\t\t}\n\t}\n}', detail: "animation controller root", type: "type", context: "animation_controller" },
   { label: "render_controllers (root)", snippet: '"format_version": "1.10.0",\n"render_controllers": {\n\t"controller.render.${1:name}": {\n\t\t"geometry": "Geometry.default",\n\t\t"materials": [{ "*": "Material.default" }],\n\t\t"textures": ["Texture.default"]\n\t}\n}', detail: "render controller root", type: "type", context: "render_controller" },
+  { label: "geometry (render controller)", snippet: '"geometry": "${1:Geometry.default}"', detail: "render controller field", type: "property", context: "render_controller" },
+  { label: "materials (render controller)", snippet: '"materials": [{ "${1:*}": "${2:Material.default}" }]$0', detail: "render controller field", type: "property", context: "render_controller" },
+  { label: "textures (render controller)", snippet: '"textures": ["${1:Texture.default}"]$0', detail: "render controller field", type: "property", context: "render_controller" },
+  { label: "arrays", snippet: '"arrays": {\n\t"textures": {\n\t\t"array.${1:name}": ["${2:Texture.a}", "${3:Texture.b}"]\n\t}\n}$0', detail: "render controller field - reusable material/texture/geometry arrays", type: "property", context: "render_controller" },
+  { label: "part_visibility", snippet: '"part_visibility": [\n\t{ "${1:bone_name}": "${2:query.condition}" }\n]$0', detail: "render controller field - toggle bone visibility", type: "property", context: "render_controller" },
+  { label: "color (render controller)", snippet: '"color": {\n\t"r": "${1:1.0}",\n\t"g": "${2:1.0}",\n\t"b": "${3:1.0}",\n\t"a": "${4:1.0}"\n}$0', detail: "render controller field - color tint", type: "property", context: "render_controller" },
+  { label: "overlay_color", snippet: '"overlay_color": {\n\t"r": "${1:1.0}",\n\t"g": "${2:1.0}",\n\t"b": "${3:1.0}",\n\t"a": "${4:1.0}"\n}$0', detail: "render controller field - overlay tint (e.g. wither invulnerability)", type: "property", context: "render_controller" },
+  { label: "is_hurt_color", snippet: '"is_hurt_color": {\n\t"r": ${1:1.0},\n\t"g": ${2:0.0},\n\t"b": ${3:0.0},\n\t"a": ${4:0.3}\n}$0', detail: "render controller field - tint applied briefly when hurt", type: "property", context: "render_controller" },
+  { label: "on_fire_color", snippet: '"on_fire_color": {\n\t"r": ${1:1.0},\n\t"g": ${2:0.5},\n\t"b": ${3:0.0},\n\t"a": ${4:1.0}\n}$0', detail: "render controller field - tint applied while on fire", type: "property", context: "render_controller" },
+  { label: "ignore_lighting", snippet: '"ignore_lighting": ${1:true}', detail: "render controller field", type: "property", context: "render_controller" },
+  { label: "filter_lighting", snippet: '"filter_lighting": ${1:true}', detail: "render controller field", type: "property", context: "render_controller" },
+  { label: "light_color_multiplier", snippet: '"light_color_multiplier": "${1:1.0}"', detail: "render controller field", type: "property", context: "render_controller" },
+  { label: "rebuild_animation_matrices", snippet: '"rebuild_animation_matrices": ${1:true}', detail: "render controller field", type: "property", context: "render_controller" },
+  { label: "uv_anim", snippet: '"uv_anim": {\n\t"offset": ["${1:0}", "${2:0}"],\n\t"scale": ["${3:1}", "${4:1}"]\n}$0', detail: "render controller field - UV animation", type: "property", context: "render_controller" },
   { label: "on_entry / on_exit", snippet: '"on_entry": ["${1:@s query.reset_variable}"],\n"on_exit": []$0', detail: "animation controller state hooks", type: "property", context: "animation_controller" },
   { label: "transitions", snippet: '"transitions": [\n\t{ "${1:next_state}": "${2:query.condition}" }\n]$0', detail: "animation controller transitions", type: "property", context: "animation_controller" },
+  { label: "states", snippet: '"states": {\n\t"${1:default}": {\n\t\t"animations": ["${2:animation_name}"],\n\t\t"transitions": [\n\t\t\t{ "${3:next_state}": "${4:query.condition}" }\n\t\t]\n\t}\n}$0', detail: "animation controller states block", type: "property", context: "animation_controller" },
+  { label: "initial_state", snippet: '"initial_state": "${1:default}"', detail: "animation controller field - starting state name", type: "property", context: "animation_controller" },
+  { label: "animations (animation_controller)", snippet: '"animations": ["${1:animation_name}"]$0', detail: "animation controller state field - list of animation short names to play", type: "property", context: "animation_controller" },
+  { label: "blend_transition", snippet: '"blend_transition": ${1:0.2}', detail: "animation controller state field - cross-fade seconds when leaving this state", type: "property", context: "animation_controller" },
+  { label: "blend_via_shortest_path", snippet: '"blend_via_shortest_path": ${1:true}', detail: "animation controller state field", type: "property", context: "animation_controller" },
+  { label: "particle_effects (animation_controller)", snippet: '"particle_effects": [\n\t{ "effect": "${1:short_name}" }\n]$0', detail: "animation controller state field - particles to start on state entry", type: "property", context: "animation_controller" },
+  { label: "sound_effects (animation_controller)", snippet: '"sound_effects": [\n\t{ "effect": "${1:short_name}" }\n]$0', detail: "animation controller state field - sounds to trigger on state entry", type: "property", context: "animation_controller" },
+  { label: "variables", snippet: '"variables": {\n\t"${1:variable_name}": { "input": "${2:query.modified_move_speed}" }\n}$0', detail: "animation controller state field", type: "property", context: "animation_controller" },
   // ---- particles ------------------------------------------------------------
-  { label: "particle_effect (root)", snippet: '"format_version": "1.10.0",\n"particle_effect": {\n\t"description": {\n\t\t"identifier": "${1:namespace}:${2:particle_name}",\n\t\t"basic_render_parameters": {\n\t\t\t"material": "particles_alpha",\n\t\t\t"texture": "textures/particle/${2:particle_name}"\n\t\t}\n\t},\n\t"components": {}\n}', detail: "particle root", type: "type", context: "particle" },
+  { label: "particle_effect (root)", snippet: '"format_version": "${1:1.10.0}",\n"particle_effect": {\n\t"description": {\n\t\t"identifier": "${2:namespace}:${3:particle_name}",\n\t\t"basic_render_parameters": {\n\t\t\t"material": "particles_alpha",\n\t\t\t"texture": "textures/particle/${3:particle_name}"\n\t\t}\n\t},\n\t"components": { $0 }\n}', detail: "particle root", type: "type", context: "particle" },
+  { label: "format_version (particle)", snippet: '"format_version": "${1:1.10.0}"', detail: "top-level format_version field for this particle file", type: "property", context: "particle" },
+  { label: "minecraft:emitter_local_space", snippet: '"minecraft:emitter_local_space": {\n\t"position": ${1:false},\n\t"rotation": ${2:false},\n\t"velocity": ${3:false}\n}$0', detail: "emitter component - simulation reference frame", type: "property", context: "particle" },
+  { label: "minecraft:emitter_initialization", snippet: '"minecraft:emitter_initialization": {\n\t"creation_expression": "${1:variable.example = 0;}",\n\t"per_update_expression": "${2:variable.example2 = 1;}"\n}$0', detail: "emitter component - runs Molang on creation/update", type: "property", context: "particle" },
+  { label: "minecraft:emitter_rate_instant", snippet: '"minecraft:emitter_rate_instant": {\n\t"num_particles": ${1:10}\n}$0', detail: "emitter component - all particles emitted at once", type: "property", context: "particle" },
+  { label: "minecraft:emitter_rate_steady", snippet: '"minecraft:emitter_rate_steady": {\n\t"spawn_rate": ${1:1},\n\t"max_particles": ${2:50}\n}$0', detail: "emitter component - steady particle emission rate", type: "property", context: "particle" },
+  { label: "minecraft:emitter_rate_manual", snippet: '"minecraft:emitter_rate_manual": {\n\t"max_particles": ${1:50}\n}$0', detail: "emitter component - manually triggered emission", type: "property", context: "particle" },
+  { label: "minecraft:emitter_lifetime_looping", snippet: '"minecraft:emitter_lifetime_looping": {\n\t"active_time": ${1:10},\n\t"sleep_time": ${2:0}\n}$0', detail: "emitter component - loops until removed", type: "property", context: "particle" },
+  { label: "minecraft:emitter_lifetime_once", snippet: '"minecraft:emitter_lifetime_once": {\n\t"active_time": ${1:10}\n}$0', detail: "emitter component - runs once then expires", type: "property", context: "particle" },
+  { label: "minecraft:emitter_lifetime_expression", snippet: '"minecraft:emitter_lifetime_expression": {\n\t"activation_expression": ${1:1},\n\t"expiration_expression": ${2:0}\n}$0', detail: "emitter component - Molang-driven on/off", type: "property", context: "particle" },
+  { label: "minecraft:emitter_lifetime_events", snippet: '"minecraft:emitter_lifetime_events": {\n\t"creation_event": "${1:event_name}",\n\t"expiration_event": "${2:event_name}"\n}$0', detail: "emitter component - trigger events on creation/expiration", type: "property", context: "particle" },
+  { label: "minecraft:emitter_shape_point", snippet: '"minecraft:emitter_shape_point": {\n\t"offset": [${1:0}, ${2:0}, ${3:0}],\n\t"direction": [${4:0}, ${5:1}, ${6:0}]\n}$0', detail: "emitter shape component - point emitter", type: "property", context: "particle" },
+  { label: "minecraft:emitter_shape_sphere", snippet: '"minecraft:emitter_shape_sphere": {\n\t"offset": [${1:0}, ${2:0}, ${3:0}],\n\t"radius": ${4:1},\n\t"surface_only": ${5:false},\n\t"direction": "${6:outwards}"\n}$0', detail: "emitter shape component - sphere emitter", type: "property", context: "particle" },
+  { label: "minecraft:emitter_shape_box", snippet: '"minecraft:emitter_shape_box": {\n\t"offset": [${1:0}, ${2:0}, ${3:0}],\n\t"half_dimensions": [${4:1}, ${5:1}, ${6:1}],\n\t"surface_only": ${7:false},\n\t"direction": "${8:outwards}"\n}$0', detail: "emitter shape component - box emitter", type: "property", context: "particle" },
+  { label: "minecraft:emitter_shape_custom", snippet: '"minecraft:emitter_shape_custom": {\n\t"offset": [${1:0}, ${2:0}, ${3:0}],\n\t"direction": [${4:0}, ${5:0}, ${6:0}]\n}$0', detail: "emitter shape component - custom Molang-driven emitter", type: "property", context: "particle" },
+  { label: "minecraft:emitter_shape_entity_aabb", snippet: '"minecraft:emitter_shape_entity_aabb": {\n\t"surface_only": ${1:false},\n\t"direction": "${2:outwards}"\n}$0', detail: "emitter shape component - emits from entity's bounding box", type: "property", context: "particle" },
+  { label: "minecraft:emitter_shape_disc", snippet: '"minecraft:emitter_shape_disc": {\n\t"plane_normal": "${1:y}",\n\t"offset": [${2:0}, ${3:0}, ${4:0}],\n\t"radius": ${5:1},\n\t"surface_only": ${6:false},\n\t"direction": "${7:outwards}"\n}$0', detail: "emitter shape component - disc emitter", type: "property", context: "particle" },
+  { label: "minecraft:particle_initial_speed", snippet: '"minecraft:particle_initial_speed": ${1:1}', detail: "particle component - initial launch speed", type: "property", context: "particle" },
+  { label: "minecraft:particle_initial_spin", snippet: '"minecraft:particle_initial_spin": {\n\t"rotation": ${1:0},\n\t"rotation_rate": ${2:0}\n}$0', detail: "particle component - initial rotation/spin rate", type: "property", context: "particle" },
+  { label: "minecraft:particle_motion_dynamic", snippet: '"minecraft:particle_motion_dynamic": {\n\t"linear_acceleration": [${1:0}, ${2:-9.8}, ${3:0}],\n\t"linear_drag_coefficient": ${4:0},\n\t"rotation_acceleration": ${5:0},\n\t"rotation_drag_coefficient": ${6:0}\n}$0', detail: "particle component - forces acting on the particle", type: "property", context: "particle" },
+  { label: "minecraft:particle_motion_parametric", snippet: '"minecraft:particle_motion_parametric": {\n\t"relative_position": ["${1:Math.cos(variable.particle_age)}", "${2:1.0}", "${3:Math.sin(variable.particle_age)}"],\n\t"rotation": ${4:0}\n}$0', detail: "particle component - directly drive particle position/rotation", type: "property", context: "particle" },
+  { label: "minecraft:particle_motion_collision", snippet: '"minecraft:particle_motion_collision": {\n\t"enabled": ${1:true},\n\t"collision_drag": ${2:0},\n\t"coefficient_of_restitution": ${3:0},\n\t"collision_radius": ${4:0.1},\n\t"expire_on_contact": ${5:false}\n}$0', detail: "particle component - terrain collision behavior", type: "property", context: "particle" },
+  { label: "minecraft:particle_appearance_billboard", snippet: '"minecraft:particle_appearance_billboard": {\n\t"size": [${1:0.2}, ${2:0.2}],\n\t"face_camera_mode": "${3:lookat_xyz}",\n\t"uv": {\n\t\t"uv": [${4:0}, ${5:0}],\n\t\t"uv_size": [${6:1}, ${7:1}]\n\t}\n}$0', detail: "particle component - renders as a camera-facing billboard", type: "property", context: "particle" },
+  { label: "minecraft:particle_appearance_tinting", snippet: '"minecraft:particle_appearance_tinting": {\n\t"color": "${1:#ffffff}"\n}$0', detail: "particle component - color tint", type: "property", context: "particle" },
+  { label: "minecraft:particle_appearance_lighting", snippet: '"minecraft:particle_appearance_lighting": {}$0', detail: "particle component - tint particle by local lighting", type: "property", context: "particle" },
+  { label: "minecraft:particle_lifetime_expression", snippet: '"minecraft:particle_lifetime_expression": {\n\t"expiration_expression": ${1:0},\n\t"max_lifetime": ${2:4}\n}$0', detail: "particle component - controls particle lifetime", type: "property", context: "particle" },
+  { label: "minecraft:particle_lifetime_events", snippet: '"minecraft:particle_lifetime_events": {\n\t"creation_event": "${1:event_name}",\n\t"expiration_event": "${2:event_name}"\n}$0', detail: "particle component - trigger events on creation/expiration", type: "property", context: "particle" },
+  { label: "minecraft:particle_expire_if_in_blocks", snippet: '"minecraft:particle_expire_if_in_blocks": ["${1:minecraft:water}"]$0', detail: "particle component - expire when inside listed blocks", type: "property", context: "particle" },
+  { label: "minecraft:particle_expire_if_not_in_blocks", snippet: '"minecraft:particle_expire_if_not_in_blocks": ["${1:minecraft:air}"]$0', detail: "particle component - expire when NOT inside listed blocks", type: "property", context: "particle" },
+  { label: "minecraft:particle_kill_plane", snippet: '"minecraft:particle_kill_plane": [${1:0}, ${2:1}, ${3:0}, ${4:0}]', detail: "particle component - expire when crossing a plane (A,B,C,D)", type: "property", context: "particle" },
+  { label: "basic_render_parameters", snippet: '"basic_render_parameters": {\n\t"material": "${1:particles_alpha}",\n\t"texture": "textures/particle/${2:particle_name}"\n}$0', detail: "particle description field - material and texture", type: "property", context: "particle" },
+  { label: "curves", snippet: '"curves": {\n\t"variable.${1:my_curve}": {\n\t\t"type": "${2:linear}",\n\t\t"input": "${3:variable.particle_age}",\n\t\t"horizontal_range": ${4:1},\n\t\t"nodes": [${5:0}, ${6:1}]\n\t}\n}$0', detail: "particle description field - reusable value curves", type: "property", context: "particle" },
+  { label: "events (particle)", snippet: '"events": {\n\t"${1:event_name}": {\n\t\t"particle_effect": { "effect": "${2:effect_name}" }\n\t}\n}$0', detail: "particle description field - custom events", type: "property", context: "particle" },
   // ---- loot / trading -------------------------------------------------------
   { label: "loot table pool", snippet: '"pools": [\n\t{\n\t\t"rolls": ${1:1},\n\t\t"entries": [\n\t\t\t{ "type": "item", "name": "${2:minecraft:apple}", "weight": ${3:1} }\n\t\t]\n\t}\n]$0', detail: "loot_table.json pool", type: "property", context: "loot" },
   { label: "trade table", snippet: '"tiers": [\n\t{\n\t\t"total_exp_required": ${1:0},\n\t\t"groups": [],\n\t\t"trades": [\n\t\t\t{\n\t\t\t\t"wants": [{ "item": "${2:minecraft:emerald}", "quantity": ${3:1} }],\n\t\t\t\t"gives": [{ "item": "${4:minecraft:bread}", "quantity": ${5:1} }]\n\t\t\t}\n\t\t]\n\t}\n]$0', detail: "trading.json tier", type: "property", context: "trade" },
   { label: "format_version (trade table)", snippet: '"format_version": "${1:1.21.80}"', detail: "optional top-level format_version field for this trade table", type: "property", context: "trade" },
   // ---- sounds -----------------------------------------------------------
-  { label: "sound_definitions (root)", snippet: '"format_version": "1.14.0",\n"sound_definitions": {\n\t"${1:namespace}:${2:sound_name}": {\n\t\t"category": "${3:neutral}",\n\t\t"sounds": ["sounds/${2:sound_name}"]\n\t}\n}', detail: "sound_definitions.json root", type: "type", context: "sound" },
+  { label: "sound_definitions (root)", snippet: '"format_version": "${1:1.14.0}",\n"sound_definitions": {\n\t"${2:namespace}:${3:sound_name}": {\n\t\t"category": "${4:neutral}",\n\t\t"sounds": ["sounds/${3:sound_name}"]\n\t}\n}', detail: "sound_definitions.json root", type: "type", context: "sound" },
+  { label: "format_version (sound_definitions)", snippet: '"format_version": "${1:1.14.0}"', detail: "top-level format_version field for sound_definitions.json", type: "property", context: "sound" },
+  { label: "sound event", snippet: '"${1:namespace}:${2:sound_name}": {\n\t"category": "${3:neutral}",\n\t"sounds": ["sounds/${2:sound_name}"]\n}$0', detail: "sound_definitions.json event entry", type: "property", context: "sound" },
+  { label: "sound entry (detailed)", snippet: '{\n\t"name": "sounds/${1:sound_name}",\n\t"volume": ${2:1.0},\n\t"pitch": ${3:1.0},\n\t"is3D": ${4:true},\n\t"weight": ${5:1},\n\t"stream": ${6:false},\n\t"load_on_low_memory": ${7:false}\n}$0', detail: "sound_definitions.json sound object (as opposed to a bare path string)", type: "property", context: "sound" },
+  { label: "min_distance / max_distance", snippet: '"min_distance": ${1:1.0},\n"max_distance": ${2:10000.0}$0', detail: "sound event attenuation range", type: "property", context: "sound" },
+  { label: "category", snippet: '"category": "${1:neutral}"', detail: "sound event category (ambient, block, bottle, bucket, hostile, music, neutral, player, record, weather, ui)", type: "property", context: "sound" },
+  // ---- resource pack texture list files ------------------------------------
+  { label: "item_texture (root)", snippet: '"resource_pack_name": "${1:pack_name}",\n"texture_name": "atlas.items",\n"texture_data": {\n\t"${2:item_name}": {\n\t\t"textures": "textures/items/${2:item_name}"\n\t}\n}$0', detail: "item_texture.json root", type: "type", context: "item_texture" },
+  { label: "texture_data entry (item)", snippet: '"${1:item_name}": {\n\t"textures": "textures/items/${1:item_name}"\n}$0', detail: "item_texture.json texture_data entry", type: "property", context: "item_texture" },
+  { label: "texture_data entry (multi-frame item)", snippet: '"${1:item_name}": {\n\t"textures": ["${2:textures/items/item_v1}", "${3:textures/items/item_v2}"]\n}$0', detail: "item_texture.json texture_data entry with multiple textures (indexed by aux value)", type: "property", context: "item_texture" },
+  { label: "terrain_texture (root)", snippet: '"resource_pack_name": "${1:pack_name}",\n"texture_name": "atlas.terrain",\n"padding": ${2:8},\n"num_mip_levels": ${3:4},\n"texture_data": {\n\t"${4:block_name}": {\n\t\t"textures": "textures/blocks/${4:block_name}"\n\t}\n}$0', detail: "terrain_texture.json root", type: "type", context: "terrain_texture" },
+  { label: "texture_data entry (block)", snippet: '"${1:block_name}": {\n\t"textures": "textures/blocks/${1:block_name}"\n}$0', detail: "terrain_texture.json texture_data entry", type: "property", context: "terrain_texture" },
+  { label: "texture_data entry (variations)", snippet: '"${1:block_name}": {\n\t"textures": {\n\t\t"variations": [\n\t\t\t{ "path": "textures/blocks/${1:block_name}_0", "weight": ${2:1} },\n\t\t\t{ "path": "textures/blocks/${1:block_name}_1", "weight": ${3:1} }\n\t\t]\n\t}\n}$0', detail: "terrain_texture.json texture_data entry with randomized variations", type: "property", context: "terrain_texture" },
+  { label: "texture_data entry (overlay color)", snippet: '"${1:block_name}": {\n\t"textures": [\n\t\t{ "path": "textures/blocks/${1:block_name}", "overlay_color": "${2:#79c05a}" }\n\t]\n}$0', detail: "terrain_texture.json texture_data entry with a biome-style overlay color", type: "property", context: "terrain_texture" },
+  { label: "padding", snippet: '"padding": ${1:8}', detail: "terrain_texture.json field - buffer space between textures", type: "property", context: "terrain_texture" },
+  { label: "num_mip_levels", snippet: '"num_mip_levels": ${1:4}', detail: "terrain_texture.json field - mipmap levels (0-4)", type: "property", context: "terrain_texture" },
+  { label: "textures_list entry", snippet: '"textures/${1:items}/${2:texture_name}"$0', detail: "textures_list.json array entry (texture path without extension)", type: "property", context: "texture_list" },
+  { label: "flipbook entry", snippet: '{\n\t"flipbook_texture": "textures/blocks/${1:texture_name}",\n\t"atlas_tile": "${2:atlas_tile_name}",\n\t"ticks_per_frame": ${3:10},\n\t"frames": [${4:0}, ${5:1}, ${6:2}, ${7:3}]\n}$0', detail: "flipbook_textures.json array entry - animated block texture", type: "property", context: "flipbook_textures" },
+  { label: "flipbook entry (blend)", snippet: '{\n\t"flipbook_texture": "textures/blocks/${1:texture_name}",\n\t"atlas_tile": "${2:atlas_tile_name}",\n\t"ticks_per_frame": ${3:10},\n\t"frames": [${4:0}, ${5:1}, ${6:2}, ${7:3}],\n\t"blend_frames": ${8:true}\n}$0', detail: "flipbook_textures.json array entry with smooth frame blending", type: "property", context: "flipbook_textures" },
   // ---- generic value helpers ----------------------------------------------
   { label: "min_engine_version", snippet: '"min_engine_version": [${1:1}, ${2:21}, ${3:70}]', detail: "engine version array", type: "property", context: "manifest" },
   { label: "version [1,0,0]", snippet: '"version": [${1:1}, ${2:0}, ${3:0}]', detail: "semantic version array", type: "property", context: "manifest" },
@@ -473,6 +587,10 @@ function contextForPath(path) {
 
   if (name === "manifest.json") return "manifest";
   if (name === "sound_definitions.json") return "sound";
+  if (name === "textures_list.json") return "texture_list";
+  if (name === "item_texture.json") return "item_texture";
+  if (name === "terrain_texture.json") return "terrain_texture";
+  if (name === "flipbook_textures.json") return "flipbook_textures";
 
   if (has("render_controllers") || name.includes("render_controller")) return "render_controller";
   if (has("animation_controllers") || name.includes("animation_controller")) return "animation_controller";
@@ -480,16 +598,19 @@ function contextForPath(path) {
   if (has("loot_tables")) return "loot";
   if (has("trading")) return "trade";
   if (has("recipes")) return "recipe";
-  if (has("particles")) return "particle";
+  if (has("particles") || has("particle") || name.includes(".particle.")) return "particle";
+  if (has("attachables") || has("attachable") || name.includes(".attachable.")) return "attachable";
   if (has("blocks")) return "block";
   if (has("items")) return "item";
-  if (has("entities")) {
-    // Behavior pack entity files ("minecraft:entity") and resource pack
-    // client entity files ("minecraft:client_entity") both conventionally
-    // live in an "entities" folder, so use the BP/RP folder-name detector
-    // above (rather than a narrow one-off check) to tell them apart -- it
-    // also correctly handles the entities/ folder being nested a level or
-    // two below the actual BP/RP folder.
+  if (has("entities") || has("entity") || name.includes(".entity.")) {
+    // Behavior pack entity files ("minecraft:entity") conventionally live in
+    // a plural "entities" folder, while resource pack client entity files
+    // ("minecraft:client_entity") conventionally live in a singular
+    // "entity" folder (and/or use a ".entity.json" file suffix) -- so
+    // accept either folder name/suffix here and use the BP/RP folder-name
+    // detector below to tell the two apart. This also correctly handles
+    // the entities/entity folder being nested a level or two below the
+    // actual BP/RP folder.
     return packTypeForPath(path) === "rp" ? "client_entity" : "entity";
   }
   return null;
