@@ -145,6 +145,123 @@ function modeForExt(ext) {
   return "text/plain";
 }
 
+// ---------------------------------------------------------------------------
+// Line numbers, rebuilt as a purely visual, read-only overlay that lives
+// completely OUTSIDE CodeMirror's contenteditable DOM tree, instead of using
+// CodeMirror's own built-in `lineNumbers: true` gutter.
+//
+// Why not just turn `lineNumbers: true` back on: CodeMirror's built-in
+// gutter renders each line number as a `contenteditable="false"` <div>
+// physically interleaved *inside* the same contenteditable surface as the
+// text, immediately to the left of each line (see `updateLineGutter()` in
+// codemirror.js). On Android/Chrome that specific "editable text, then a
+// non-editable node, then more editable text" DOM shape is a confirmed,
+// maintainer-acknowledged, never-fixed upstream bug: pressing Backspace at
+// the start of a line moves the selection into the non-editable gutter div
+// instead of merging with the previous line, which visually dismisses the
+// on-screen keyboard and silently drops the edit (see
+// https://github.com/codemirror/codemirror5/issues/4637, where the
+// CodeMirror 5 maintainer confirms the underlying cause is a mobile Chrome
+// bug and the only real fix is not having a non-editable node in that
+// position at all). That's exactly the "backspace stops working" failure
+// this app has hit multiple times, so it isn't worth the risk of turning
+// the built-in gutter back on just for cosmetics.
+//
+// Instead, this renders its own <div> of line numbers as a plain SIBLING
+// of the CodeMirror instance's DOM (never a descendant of `.CodeMirror`,
+// and definitely never a descendant of the contenteditable div) and keeps
+// it visually in sync by re-measuring line positions/scroll offset via
+// CodeMirror's public geometry API (`heightAtLine`, `getScrollInfo`,
+// `defaultTextHeight`) whenever CodeMirror re-renders ("update"/"scroll"/
+// "swapDoc" events) or the wrapping container is resized. Because it's
+// forever outside the editable region, it can NEVER trigger the Android
+// gutter-caret bug -- there is no non-editable node for the caret to ever
+// land in, no matter what CodeMirror does internally.
+class LineNumberGutter {
+  constructor(cm, hostContainer) {
+    this.cm = cm;
+    this.host = hostContainer;
+    this.el = document.createElement("div");
+    this.el.className = "pas-linenumbers";
+    // Never part of the tab order / accessibility tree as an interactive
+    // control, and never a drop target for the caret -- it's simple text.
+    this.el.setAttribute("aria-hidden", "true");
+    this.host.appendChild(this.el);
+    this.enabled = true;
+
+    this._onUpdate = () => this._render();
+    this._onScroll = () => this._syncScroll();
+    this._onCursorActivity = () => this._highlightActiveLine();
+    cm.on("update", this._onUpdate);
+    cm.on("scroll", this._onScroll);
+    cm.on("swapDoc", this._onUpdate);
+    cm.on("cursorActivity", this._onCursorActivity);
+
+    this._resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => this._render()) : null;
+    if (this._resizeObserver) this._resizeObserver.observe(this.host);
+  }
+
+  setEnabled(enabled) {
+    this.enabled = enabled;
+    this.el.style.display = enabled ? "" : "none";
+    this.host.classList.toggle("pas-has-linenumbers", enabled);
+    if (enabled) this._render();
+  }
+
+  _syncScroll() {
+    if (!this.enabled) return;
+    const info = this.cm.getScrollInfo();
+    this.el.style.transform = `translateY(${-info.top}px)`;
+  }
+
+  _render() {
+    if (!this.enabled) return;
+    const cm = this.cm;
+    const first = cm.firstLine();
+    const last = cm.lastLine();
+    const count = last - first + 1;
+    // Rebuilding on every "update" is cheap even for a few hundred lines
+    // (a handful of text nodes, no layout thrashing beyond what CodeMirror
+    // itself already just did) -- add-on JSON/JS files are small, and this
+    // keeps the implementation simple/robust rather than trying to diff
+    // against the previous render.
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < count; i++) {
+      const row = document.createElement("div");
+      row.className = "pas-linenumber-row";
+      row.style.height = `${cm.defaultTextHeight()}px`;
+      row.textContent = String(first + i + 1);
+      frag.appendChild(row);
+    }
+    this.el.innerHTML = "";
+    this.el.appendChild(frag);
+    // Match CodeMirror's own top padding so row 1 lines up with the first
+    // line of text exactly (see .CodeMirror-lines padding in codemirror.css).
+    const linesEl = cm.getScrollerElement().querySelector(".CodeMirror-lines");
+    this.el.style.paddingTop = linesEl ? getComputedStyle(linesEl).paddingTop : "4px";
+    this._syncScroll();
+    this._highlightActiveLine();
+  }
+
+  _highlightActiveLine() {
+    if (!this.enabled) return;
+    const line = this.cm.getCursor().line;
+    const rows = this.el.children;
+    for (let i = 0; i < rows.length; i++) {
+      rows[i].classList.toggle("is-active", i === line);
+    }
+  }
+
+  destroy() {
+    if (this._resizeObserver) this._resizeObserver.disconnect();
+    this.cm.off("update", this._onUpdate);
+    this.cm.off("scroll", this._onScroll);
+    this.cm.off("swapDoc", this._onUpdate);
+    this.cm.off("cursorActivity", this._onCursorActivity);
+    if (this.el.parentNode) this.el.parentNode.removeChild(this.el);
+  }
+}
+
 class EditorManager {
   constructor(container, opts) {
     this.container = container;
@@ -155,20 +272,37 @@ class EditorManager {
       value: "",
       mode: "text/plain",
       theme: "vscode-dark",
-      // Line numbers removed entirely (not just hidden). CodeMirror renders
-      // the gutter as a non-editable div interleaved between every line
-      // inside the same editable surface, which is what made mobile
-      // backspace-at-start-of-line and native text selection unreliable
-      // (the OS/keyboard's caret & selection logic gets confused crossing
-      // those non-editable boundaries) -- broadening the upstream
-      // Android-only workaround for this wasn't enough to fix it on every
-      // device, so removing the gutter altogether is the reliable fix.
+      // CodeMirror's own built-in gutter (`lineNumbers: true`) is never
+      // used -- it renders each line number as a non-editable div
+      // physically inside the same contenteditable surface as the text,
+      // which is a confirmed, unfixed upstream Android bug that broke
+      // start-of-line Backspace (see LineNumberGutter's comment below for
+      // the full explanation and the upstream issue link). Line numbers
+      // are instead rendered by a completely separate LineNumberGutter
+      // component that never touches CodeMirror's editable DOM at all --
+      // see where it's constructed just below.
       lineNumbers: false,
       lineWrapping: this.wrapEnabled,
       indentUnit: 4,
       tabSize: 4,
       indentWithTabs: false,
       styleActiveLine: true,
+      // Renders every line up front instead of only the ones scrolled into
+      // view. CodeMirror's contenteditable input mode has a long-standing,
+      // maintainer-acknowledged bug where Select All (and shift-click/
+      // shift-drag selecting past the edge of the rendered viewport) can
+      // silently drop part of the selection, because the selection gets
+      // "fixed up" against whatever's currently rendered rather than the
+      // full document -- see https://github.com/codemirror/codemirror5/issues/4625
+      // and https://github.com/codemirror/codemirror5/issues/484 (both
+      // confirmed by the maintainer, never fixed upstream; "Infinity"
+      // viewportMargin -- i.e. disabling the virtualization entirely -- is
+      // the documented, maintainer-suggested workaround in the first of
+      // those). The add-on JSON/JS files this app edits are realistically a
+      // few hundred lines at most, so rendering the whole thing up front
+      // has no meaningful cost, and it buys back completely reliable
+      // Select All / long-range shift-select on every device.
+      viewportMargin: Infinity,
       matchBrackets: true,
       autoCloseBrackets: true,
       highlightSelectionMatches: { showToken: false, annotateScrollbar: false },
@@ -192,6 +326,22 @@ class EditorManager {
       },
     });
     this.activePath = null;
+
+    // See LineNumberGutter's own doc comment above for why this isn't
+    // CodeMirror's built-in `lineNumbers` option. `container` (the
+    // `.pas-editor-host` element) is `position: relative`-equivalent for
+    // this purpose (it's `position: absolute; inset: 0` from the app
+    // shell), so the gutter can be absolutely positioned against it as a
+    // plain sibling of CodeMirror's own wrapper element without CodeMirror
+    // ever knowing it exists.
+    this.lineNumbers = new LineNumberGutter(this.cm, container);
+    this.lineNumbersEnabled = true;
+    this._syncGutterSpacing();
+    // The gutter's rendered width changes as the line count crosses a
+    // power of ten (e.g. "9" -> "10" needs one more digit's width), so
+    // re-check the reserved spacing on every re-render rather than just
+    // once at construction time.
+    this.cm.on("update", () => this._syncGutterSpacing());
 
     this.cm.on("change", (cm, changeObj) => {
       if (changeObj.origin === "setValue") return;
@@ -479,6 +629,23 @@ class EditorManager {
     return this.wrapEnabled;
   }
 
+  toggleLineNumbers() {
+    this.lineNumbersEnabled = !this.lineNumbersEnabled;
+    this.lineNumbers.setEnabled(this.lineNumbersEnabled);
+    this._syncGutterSpacing();
+    this.cm.refresh();
+    return this.lineNumbersEnabled;
+  }
+
+  // Reserves horizontal space for the line-number sidebar by writing its
+  // actual rendered width (which varies, e.g. "9" vs "99" vs "999" lines)
+  // into a CSS variable that CodeMirror's own wrapper is padded by -- see
+  // .pas-linenumbers / .pas-editor-host rules in styles.css.
+  _syncGutterSpacing() {
+    const width = this.lineNumbersEnabled ? Math.max(24, this.lineNumbers.el.offsetWidth || 0) : 0;
+    this.container.style.setProperty("--pas-linenumbers-width", `${width}px`);
+  }
+
   getCursorInfo() {
     const cm = this.cm;
     const pos = cm.getCursor();
@@ -530,6 +697,7 @@ class EditorManager {
   destroy() {
     clearTimeout(this._lintTimer);
     this._hideLintTooltip();
+    if (this.lineNumbers) this.lineNumbers.destroy();
     // CodeMirror 5 has no explicit destroy API; detaching the DOM node is
     // enough to let it get garbage collected.
     if (this.container) this.container.innerHTML = "";

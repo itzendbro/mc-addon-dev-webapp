@@ -166,8 +166,53 @@ code {
   background: var(--bg-app);
 }
 .pas-editor-host, .pas-preview-host { position: absolute; inset: 0; }
-.pas-editor-host { display: none; }
+.pas-editor-host {
+  display: none;
+  position: relative; /* anchor for .pas-linenumbers, which is an absolutely
+                          positioned sibling of the actual CodeMirror instance --
+                          see LineNumberGutter in app/editor.js. */
+  --pas-linenumbers-width: 0px;
+}
 .pas-editor-host .cm-editor { height: 100%; }
+/* Reserve horizontal space for the line-number sidebar by pushing
+   CodeMirror's own wrapper over -- the width is kept in sync with the
+   sidebar's actual rendered width (which varies with digit count) via
+   EditorManager._syncGutterSpacing() in app/editor.js. */
+.pas-editor-host.pas-has-linenumbers > .CodeMirror { padding-left: var(--pas-linenumbers-width); }
+
+/* ---------------------------------------------------------------------- */
+/* Line-number sidebar -- see the long comment on LineNumberGutter in      */
+/* app/editor.js for why this is a plain, purely-visual sibling <div>      */
+/* instead of CodeMirror's own built-in gutter option. Deliberately has no */
+/* `contenteditable` attribute at all (rather than `contenteditable=false`)*/
+/* and sits entirely outside `.CodeMirror`, so it can never end up inside  */
+/* the browser's contenteditable focus/selection model no matter what.    */
+/* ---------------------------------------------------------------------- */
+.pas-linenumbers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--pas-linenumbers-width);
+  overflow: hidden;
+  pointer-events: none; /* purely decorative -- taps pass through to the editor */
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 4;
+  background: #1e1e1e;
+  border-right: 1px solid #2b2b2b;
+  font-family: var(--font-mono, "JetBrains Mono", ui-monospace, monospace);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.pas-linenumber-row {
+  color: #5a5a5a;
+  text-align: right;
+  padding: 0 8px 0 10px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.pas-linenumber-row.is-active { color: #c6c6c6; }
 .pas-preview-host {
   display: flex;
   align-items: center;
