@@ -164,3 +164,184 @@ function toast(message, opts) {
     setTimeout(() => node.remove(), 220);
   }, options.duration || 2200);
 }
+
+// ---------------------------------------------------------------------------
+// A small hand-rolled JSON pretty-printer used by the file explorer's
+// per-file "..." menu -> "Format JSON" action. Deliberately NOT implemented
+// as `JSON.stringify(JSON.parse(text))` -- that round-trip is lossy for
+// things creators actually rely on in Minecraft add-on JSON:
+//   - Parsing to a plain JS object silently reorders any purely-numeric
+//     string keys (e.g. a block-state/trading tier keyed "1", "2", ...)
+//     ahead of every other key, per the JS property-ordering spec.
+//   - Duplicate keys inside the same object (rare, but not unheard of after
+//     copy/pasting snippets) get silently collapsed to just the last one.
+//   - Every number gets re-rendered through JS's float-to-string
+//     formatting, so `1.0` becomes `1`, `5e2` becomes `500`, and very
+//     large/high-precision numbers can silently lose precision.
+// Any of those would quietly rewrite the *meaning* of the file, not just
+// its whitespace. Instead this walks the raw character stream once,
+// building a lightweight AST that keeps every string/number/keyword's
+// original source text verbatim, and re-emits it re-indented.
+// ---------------------------------------------------------------------------
+function formatJSON(text, indent) {
+  const unit = indent || "\t";
+  // Strip a leading UTF-8 BOM, if present (common in files saved/edited by
+  // some Windows tools), so it doesn't get mistaken for a stray token.
+  const src = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const n = src.length;
+  let i = 0;
+
+  function fail(message) {
+    const upTo = src.slice(0, i);
+    const line = (upTo.match(/\n/g) || []).length + 1;
+    const col = i - upTo.lastIndexOf("\n");
+    const err = new Error(message);
+    err.line = line;
+    err.col = col;
+    throw err;
+  }
+
+  function isWs(ch) {
+    return ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+  }
+
+  function skipWs() {
+    while (i < n && isWs(src[i])) i++;
+  }
+
+  function parseString() {
+    const start = i;
+    i++; // opening quote
+    while (i < n) {
+      const ch = src[i];
+      if (ch === "\\") {
+        if (i + 1 >= n) fail("Unterminated string literal");
+        i += 2;
+        continue;
+      }
+      if (ch === '"') {
+        i++;
+        return src.slice(start, i);
+      }
+      if (ch === "\n") fail("Unterminated string literal (newline inside string)");
+      i++;
+    }
+    fail("Unterminated string literal");
+  }
+
+  function parseNumber() {
+    const start = i;
+    if (src[i] === "-") i++;
+    if (src[i] === undefined || src[i] < "0" || src[i] > "9") fail("Invalid number");
+    while (i < n && src[i] >= "0" && src[i] <= "9") i++;
+    if (src[i] === ".") {
+      i++;
+      if (src[i] === undefined || src[i] < "0" || src[i] > "9") fail("Invalid number");
+      while (i < n && src[i] >= "0" && src[i] <= "9") i++;
+    }
+    if (src[i] === "e" || src[i] === "E") {
+      i++;
+      if (src[i] === "+" || src[i] === "-") i++;
+      if (src[i] === undefined || src[i] < "0" || src[i] > "9") fail("Invalid number");
+      while (i < n && src[i] >= "0" && src[i] <= "9") i++;
+    }
+    return src.slice(start, i);
+  }
+
+  function parseKeyword(word) {
+    if (src.slice(i, i + word.length) !== word) fail(`Unexpected token (expected '${word}')`);
+    i += word.length;
+    return word;
+  }
+
+  function parseValue() {
+    skipWs();
+    const ch = src[i];
+    if (ch === undefined) fail("Unexpected end of input");
+    if (ch === '"') return { type: "raw", text: parseString() };
+    if (ch === "{") return parseObject();
+    if (ch === "[") return parseArray();
+    if (ch === "-" || (ch >= "0" && ch <= "9")) return { type: "raw", text: parseNumber() };
+    if (ch === "t") return { type: "raw", text: parseKeyword("true") };
+    if (ch === "f") return { type: "raw", text: parseKeyword("false") };
+    if (ch === "n") return { type: "raw", text: parseKeyword("null") };
+    fail(`Unexpected token '${ch}'`);
+  }
+
+  function parseObject() {
+    i++; // {
+    const members = [];
+    skipWs();
+    if (src[i] === "}") {
+      i++;
+      return { type: "object", members };
+    }
+    for (;;) {
+      skipWs();
+      if (src[i] !== '"') fail("Expected a property name in double quotes");
+      const key = parseString();
+      skipWs();
+      if (src[i] !== ":") fail("Expected ':' after property name");
+      i++;
+      const value = parseValue();
+      members.push({ key, value });
+      skipWs();
+      if (src[i] === ",") {
+        i++;
+        continue;
+      }
+      if (src[i] === "}") {
+        i++;
+        break;
+      }
+      fail("Expected ',' or '}'");
+    }
+    return { type: "object", members };
+  }
+
+  function parseArray() {
+    i++; // [
+    const items = [];
+    skipWs();
+    if (src[i] === "]") {
+      i++;
+      return { type: "array", items };
+    }
+    for (;;) {
+      items.push(parseValue());
+      skipWs();
+      if (src[i] === ",") {
+        i++;
+        continue;
+      }
+      if (src[i] === "]") {
+        i++;
+        break;
+      }
+      fail("Expected ',' or ']'");
+    }
+    return { type: "array", items };
+  }
+
+  const root = parseValue();
+  skipWs();
+  if (i < n) fail("Unexpected trailing content after the JSON value");
+
+  function print(node, depth) {
+    if (node.type === "raw") return node.text;
+    const pad = unit.repeat(depth);
+    const padIn = unit.repeat(depth + 1);
+    if (node.type === "object") {
+      if (!node.members.length) return "{}";
+      const lines = node.members.map((m) => `${padIn}${m.key}: ${print(m.value, depth + 1)}`);
+      return `{\n${lines.join(",\n")}\n${pad}}`;
+    }
+    // array
+    if (!node.items.length) return "[]";
+    const lines = node.items.map((v) => `${padIn}${print(v, depth + 1)}`);
+    return `[\n${lines.join(",\n")}\n${pad}]`;
+  }
+
+  return print(root, 0);
+}
+

@@ -132,21 +132,26 @@ function initApp(host) {
       if (choice === 6) return exportFolderAsPack(vfs, path, `${node.name}.mcpack`);
       if (choice === 7) return deleteFlow(path);
     } else {
-      const choice = await actionSheet({
-        title: node.name,
-        items: [
-          { label: "Open", icon: "\u{1F4C4}" },
-          { label: "Rename / Move", icon: "\u270F\uFE0F" },
-          { label: "Duplicate", icon: "\u{1F4CB}" },
-          { label: "Download", icon: "\u{1F4E5}" },
-          { label: "Delete", icon: "\u{1F5D1}\uFE0F", danger: true },
-        ],
-      });
+      const isJson = node.ext === "json";
+      const items = [
+        { label: "Open", icon: "\u{1F4C4}" },
+        { label: "Rename / Move", icon: "\u270F\uFE0F" },
+        { label: "Duplicate", icon: "\u{1F4CB}" },
+      ];
+      if (isJson) items.push({ label: "Format JSON", icon: "\u2728" });
+      items.push({ label: "Download", icon: "\u{1F4E5}" }, { label: "Delete", icon: "\u{1F5D1}\uFE0F", danger: true });
+      const choice = await actionSheet({ title: node.name, items });
       if (choice === 0) return openFile(path);
       if (choice === 1) return renameFlow(path);
       if (choice === 2) return duplicateFlow(path);
-      if (choice === 3) return downloadSingleFile(node);
-      if (choice === 4) return deleteFlow(path);
+      if (isJson) {
+        if (choice === 3) return formatJsonFlow(path);
+        if (choice === 4) return downloadSingleFile(node);
+        if (choice === 5) return deleteFlow(path);
+      } else {
+        if (choice === 3) return downloadSingleFile(node);
+        if (choice === 4) return deleteFlow(path);
+      }
     }
   }
 
@@ -211,6 +216,38 @@ function initApp(host) {
     const copy = vfs.createFile(path, node.isText ? node.content : node.b64, { isText: node.isText });
     renderExplorer();
     toast(`Duplicated as ${copy.name}`);
+  }
+
+  // Re-indents a .json file's raw text into consistently tab-indented,
+  // one-value-per-line JSON, without touching a single byte of its actual
+  // *content* (keys/values/order are preserved exactly -- see the comment
+  // above formatJSON() in utils.js for why this deliberately isn't just
+  // `JSON.stringify(JSON.parse(text))`). Works whether or not the file is
+  // currently open in a tab, and regardless of whether it's the *active*
+  // tab: the VFS is always updated directly (mirroring what the normal
+  // typing -> onChange -> vfs.setContent path does), and if a CodeMirror
+  // Doc already exists for this path (i.e. it's open in some tab, active
+  // or not) that Doc's text is also updated in place so the editor view
+  // reflects the reformatted text immediately rather than only on next
+  // open -- Doc.setValue()'s change event uses origin "setValue", which
+  // editor.js's change handler deliberately ignores (same as the doc's
+  // very first load), so it does NOT re-sync the VFS on its own and this
+  // function must do that itself first.
+  async function formatJsonFlow(path) {
+    const node = vfs.get(path);
+    if (!node || !node.isText) return;
+    const before = node.content ?? "";
+    let after;
+    try {
+      after = formatJSON(before);
+    } catch (err) {
+      const where = err.line ? ` (line ${err.line}, col ${err.col})` : "";
+      return toast(`Can't format -- invalid JSON${where}: ${err.message}`, { type: "error" });
+    }
+    if (after === before) return toast("Already formatted.");
+    vfs.setContent(path, after);
+    if (editorManager.hasState(path)) editorManager.setContent(path, after);
+    toast("Formatted.");
   }
 
   async function deleteFlow(path) {

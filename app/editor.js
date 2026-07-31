@@ -288,6 +288,22 @@ class EditorManager {
     this.docs.delete(path);
   }
 
+  // Overwrites the content of a (possibly not currently active/open) doc,
+  // e.g. after running the "Format JSON" action from the file explorer's
+  // "..." menu on a file that isn't the one currently open in the editor.
+  // If the file has never been opened this session there's no CodeMirror
+  // Doc for it yet -- the caller is expected to have already written the
+  // new content straight into the VFS in that case, so this is a no-op.
+  setContent(path, content) {
+    const entry = this.docs.get(path);
+    if (!entry) return;
+    // "+format" is a distinct origin from "setValue" so this still flows
+    // through the normal "change" handler (which persists it back to the
+    // VFS/localStorage) instead of being silently ignored the way a plain
+    // "setValue" origin is elsewhere in this file.
+    entry.doc.setValue(content);
+  }
+
   openFile(path, content, ext) {
     let entry = this.docs.get(path);
     if (!entry) {
