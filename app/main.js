@@ -48,8 +48,26 @@ function initApp(host) {
     vfs.saveToStorage(projectName);
   }, 1200);
 
-  vfs.onChange(() => {
-    renderExplorer();
+  vfs.onChange((kind) => {
+    // "content" fires on every single keystroke (typing AND backspacing) --
+    // it's how the editor's onChange above gets the freshly typed text into
+    // the VFS. Re-rendering the whole file-explorer tree (a full
+    // `innerHTML = ""` + rebuild of every row, including all the folders
+    // the user isn't even looking at) on every keystroke was previously
+    // happening here regardless of `kind`, entirely unconditionally. That's
+    // real, unnecessary synchronous main-thread DOM work being done inside
+    // the exact same tick as CodeMirror's own DOM read/diff of the edit
+    // (see ContentEditableInput.pollContent/readFromDOMSoon in
+    // vendor/codemirror5/lib/codemirror.js) -- on a phone this is very
+    // plausibly what feels like "sticky"/non-smooth backspacing, since it's
+    // extra work competing for the same main thread on every character,
+    // right as Android's IME/contenteditable input handling is most timing
+    // sensitive. None of that structure (file list, names, folders) can
+    // possibly have changed just from editing a file's text content, so
+    // only re-render the tree for the events that actually add/remove/
+    // rename/move a node ("create"/"rename"/"delete"/"clear") -- "content"
+    // still triggers an autosave, just not a tree rebuild.
+    if (kind !== "content") renderExplorer();
     scheduleAutosave();
   });
 
