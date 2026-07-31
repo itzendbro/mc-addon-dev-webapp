@@ -159,7 +159,19 @@ function initApp(host) {
     });
     if (!name) return;
     const ext = extOf(name);
-    const content = ext === "json" ? "{\n\t\n}" : "";
+    // New files always start completely empty. This used to pre-fill
+    // ".json" files with "{\n\t\n}" as a starter scaffold, but that
+    // pre-filled content was itself the file's very first "edit" ever
+    // applied to a brand new CodeMirror Doc -- on real phones, deleting
+    // pieces of that pre-existing text right as the editor/keyboard is
+    // still settling in from just being created is exactly the situation
+    // that could trip up the contenteditable input's DOM diffing (see the
+    // composition/backspace fixes above), and it's not something the user
+    // asked to be there in the first place. Starting empty sidesteps that
+    // whole class of "first edit deletes pre-filled content" issues, and
+    // manifest.json can still be filled in via the !mbp/!mrp magic
+    // snippets from a truly empty file.
+    const content = "";
     const node = vfs.createFile(joinPath(folder, name), content, { isText: !isImageExt(ext) && !isAudioExt(ext) });
     renderExplorer();
     if (node.isText) openFile(node.path);
