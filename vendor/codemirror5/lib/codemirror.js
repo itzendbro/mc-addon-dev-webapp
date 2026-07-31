@@ -8834,6 +8834,8 @@
     this.composing = null;
     this.gracePeriod = false;
     this.readDOMTimeout = null;
+    this._stuckCompositionTimer = null;
+    this._compositionDomLength = null;
   };
 
   ContentEditableInput.prototype.init = function (display) {
@@ -8860,9 +8862,13 @@
 
     on(div, "compositionstart", function (e) {
       this$1.composing = {data: e.data, done: false};
+      this$1._compositionDomLength = div.textContent.length;
+      this$1._watchStuckComposition(false);
     });
     on(div, "compositionupdate", function (e) {
       if (!this$1.composing) { this$1.composing = {data: e.data, done: false}; }
+      this$1._compositionDomLength = div.textContent.length;
+      this$1._watchStuckComposition(false);
     });
     on(div, "compositionend", function (e) {
       if (this$1.composing) {
@@ -8886,12 +8892,34 @@
         this$1.readFromDOMSoon();
         this$1.composing.done = true;
       }
+      this$1._clearStuckCompositionWatch();
     });
 
     on(div, "touchstart", function () { return input.forceCompositionEnd(); });
 
     on(div, "input", function () {
-      if (!this$1.composing) { this$1.readFromDOMSoon(); }
+      if (!this$1.composing) { this$1.readFromDOMSoon(); return }
+      // We're still marked as composing, which normally means an IME
+      // composition is legitimately in progress and this "input" event is
+      // just an interim update we should ignore until compositionend gives
+      // us the final text. But Chrome for Android (and some keyboards, e.g.
+      // Samsung Internet + Samsung Keyboard) can simply never fire
+      // compositionend after the user types and then immediately
+      // backspaces -- see the watchdog helpers below for the full
+      // explanation. The telltale sign of that specific failure (matching
+      // the same detection CodeMirror 6's maintainer used for this exact
+      // bug) is that the DOM's total text got *shorter* -- a pure deletion
+      // -- while we still think a composition is open; legitimate,
+      // still-in-progress IME composition essentially never shrinks the
+      // rendered text (it grows or stays the same length as more of the
+      // word is composed). Any other "input" while composing (text same
+      // length or longer) is treated as a normal, still-in-progress
+      // composition and left alone, so a user pausing mid-composition to
+      // think never gets interrupted.
+      var domLength = div.textContent.length;
+      var shrank = this$1._compositionDomLength != null && domLength < this$1._compositionDomLength;
+      this$1._compositionDomLength = domLength;
+      this$1._watchStuckComposition(shrank);
     });
 
     function onCopyCut(e) {
@@ -9194,10 +9222,57 @@
   ContentEditableInput.prototype.forceCompositionEnd = function () {
     if (!this.composing) { return }
     clearTimeout(this.readDOMTimeout);
+    this._clearStuckCompositionWatch();
     this.composing = null;
     this.updateFromDOM();
     this.div.blur();
     this.div.focus();
+  };
+  // Chrome for Android (and some other mobile browsers/keyboards, e.g.
+  // Samsung Internet + Samsung Keyboard) can fail to ever fire a
+  // `compositionend` event after starting a composition, most commonly
+  // when the user types and then immediately backspaces before the
+  // composition would normally settle. See
+  // https://discuss.codemirror.net/t/autocomplete-gets-stuck-and-permanently-breaks-enter-key-when-quickly-backspacing-on-android/9514,
+  // where CodeMirror 6's maintainer confirmed and worked around the exact
+  // same underlying browser bug (missing compositionend events on
+  // Android). Without a `compositionend`, `this.composing` here in
+  // CodeMirror 5 (an object, not a boolean, despite the name suggesting
+  // otherwise) never gets cleared -- and pollSelection()/pollContent()'s
+  // `if (this.composing) { return }` guards, plus the plain "input" event
+  // handler's `if (!this.composing) { this.readFromDOMSoon(); }` above,
+  // mean EVERY edit after that point permanently stops being read out of
+  // the DOM and applied to CodeMirror's document model. The editor still
+  // repaints from that now-stale, no-longer-updating model on every
+  // unrelated event (scrolling, cursor moves, another keystroke, the
+  // autocomplete popup opening, ...), which is exactly what makes already
+  // backspaced/typed text appear to silently "come back" or stop
+  // registering at all -- the underlying bug is a wedged `composing`
+  // state, not any single bad edit.
+  //
+  // `immediate` (passed in from the "input" handler above) is true only
+  // when we've detected the exact fingerprint of this bug -- the DOM text
+  // got shorter while we still think a composition is open, i.e. the user
+  // backspaced mid-"composition" -- in which case we force-end almost
+  // right away (a real IME composition essentially never shrinks the
+  // rendered text). Otherwise we fall back to a much longer, generous
+  // safety-net timeout that only ever fires if compositionend genuinely
+  // never arrives at all; it's long enough that it will never interrupt a
+  // real, still-in-progress IME composition (which resets this timer on
+  // every compositionupdate as more of the word is composed) even if the
+  // user pauses mid-composition to think.
+  ContentEditableInput.prototype._watchStuckComposition = function (immediate) {
+    var this$1 = this;
+    clearTimeout(this._stuckCompositionTimer);
+    this._stuckCompositionTimer = setTimeout(function () {
+      this$1._stuckCompositionTimer = null;
+      if (this$1.composing) { this$1.forceCompositionEnd(); }
+    }, immediate ? 30 : 4000);
+  };
+  ContentEditableInput.prototype._clearStuckCompositionWatch = function () {
+    clearTimeout(this._stuckCompositionTimer);
+    this._stuckCompositionTimer = null;
+    this._compositionDomLength = null;
   };
   ContentEditableInput.prototype.readFromDOMSoon = function () {
       var this$1 = this;
