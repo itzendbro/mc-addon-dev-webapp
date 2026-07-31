@@ -31,6 +31,7 @@ function initApp(host) {
   const folderInput = $("#pas-folder-input");
   const archiveInput = $("#pas-archive-input");
   const wrapToggleBtn = $("#pas-wrap-toggle");
+  const contentFabBtn = $("#pas-content-fab");
 
   const editorManager = new EditorManager(editorHost, {
     onChange: (path, doc) => {
@@ -606,6 +607,217 @@ function initApp(host) {
     return false;
   }
 
+  // ---- "Add content" FAB: item/entity/block/sound/splash adder ----------
+  // Tapping create_icon.png opens a right-side slide-over panel. Only the
+  // Item adder is wired up for now (per the current task) -- entity/block/
+  // sound/splash are listed so the panel's shape/menu is already right for
+  // when they're added, but each shows a "coming soon" toast if tapped.
+  const contentScrim = el("div", { class: "pas-content-scrim" });
+  const contentPanel = el("div", { class: "pas-content-panel" });
+  document.body.appendChild(contentScrim);
+  document.body.appendChild(contentPanel);
+
+  function openContentPanel() {
+    renderContentTypePicker();
+    contentPanel.classList.add("is-open");
+    contentScrim.classList.add("is-open");
+  }
+  function closeContentPanel() {
+    contentPanel.classList.remove("is-open");
+    contentScrim.classList.remove("is-open");
+  }
+  contentFabBtn.addEventListener("click", openContentPanel);
+  contentScrim.addEventListener("click", closeContentPanel);
+
+  const CONTENT_TYPES = [
+    { id: "item", label: "Item", icon: "\u2694\uFE0F", enabled: true },
+    { id: "entity", label: "Entity", icon: "\u{1F9DF}", enabled: false },
+    { id: "block", label: "Block", icon: "\u{1F9F1}", enabled: false },
+    { id: "sound", label: "Sound", icon: "\u{1F50A}", enabled: false },
+    { id: "splash", label: "Splash", icon: "\u{1F4A6}", enabled: false },
+  ];
+
+  function renderContentTypePicker() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add Content"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+    const grid = el(
+      "div",
+      { class: "pas-content-type-grid" },
+      CONTENT_TYPES.map((t) =>
+        el(
+          "button",
+          {
+            class: "pas-content-type-btn",
+            onclick: () => {
+              if (!t.enabled) return toast(`${t.label} adder is coming soon.`);
+              renderItemAdderForm();
+            },
+          },
+          [
+            el("span", { class: "pas-content-type-icon" }, [t.icon]),
+            el("span", {}, [t.label]),
+            t.enabled ? null : el("span", { class: "pas-content-type-soon" }, ["Coming soon"]),
+          ]
+        )
+      )
+    );
+    contentPanel.appendChild(el("div", { class: "pas-content-panel-body" }, [grid]));
+  }
+
+  // Renders the Item adder form. Every field maps 1:1 onto
+  // ContentBuilders.buildItemFileJSON()'s `fields` argument -- see
+  // app/mcContentBuilders.js for exactly what each one produces.
+  function renderItemAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add Item"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    const idInput = el("input", { class: "pas-input", type: "text", placeholder: "custom:magic_sword", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const nameInput = el("input", { class: "pas-input", type: "text", placeholder: "Magic Sword", autocomplete: "off" });
+    const iconInput = el("input", { class: "pas-input", type: "text", placeholder: "magic_sword (texture short name)", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+    const categorySelect = el("select", { class: "pas-input" }, [
+      el("option", { value: "items" }, ["Items"]),
+      el("option", { value: "equipment" }, ["Equipment"]),
+      el("option", { value: "construction" }, ["Construction"]),
+      el("option", { value: "nature" }, ["Nature"]),
+      el("option", { value: "none" }, ["None (commands only)"]),
+    ]);
+    const stackInput = el("input", { class: "pas-input", type: "number", value: "64", min: "1", max: "9999", inputmode: "numeric" });
+
+    const handEquippedCheck = el("input", { type: "checkbox" });
+    const glintCheck = el("input", { type: "checkbox" });
+
+    const foodCheck = el("input", { type: "checkbox" });
+    const foodNutritionInput = el("input", { class: "pas-input", type: "number", value: "4", inputmode: "numeric" });
+    const foodSaturationInput = el("input", { class: "pas-input", type: "number", value: "0.3", step: "0.1", inputmode: "decimal" });
+    const foodAlwaysEatCheck = el("input", { type: "checkbox" });
+    const foodFields = el("div", { class: "pas-form-subfields" }, [
+      el("div", { class: "pas-form-two-col" }, [
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Nutrition"]), foodNutritionInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Saturation modifier"]), foodSaturationInput]),
+      ]),
+      el("div", { class: "pas-form-check" }, [el("label", {}, ["Can always eat (even when full)"]), foodAlwaysEatCheck]),
+    ]);
+    foodCheck.addEventListener("change", () => foodFields.classList.toggle("is-visible", foodCheck.checked));
+
+    const durabilityCheck = el("input", { type: "checkbox" });
+    const maxDurabilityInput = el("input", { class: "pas-input", type: "number", value: "250", min: "1", inputmode: "numeric" });
+    const durabilityFields = el("div", { class: "pas-form-subfields" }, [
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Max durability"]), maxDurabilityInput]),
+    ]);
+    durabilityCheck.addEventListener("change", () => durabilityFields.classList.toggle("is-visible", durabilityCheck.checked));
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Identity"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Item ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace."])]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Display name"]), nameInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Icon texture name"]), iconInput, el("div", { class: "pas-form-hint" }, ["Matches a PNG you'll place at textures/items/<name>.png in the resource pack."])]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Basics"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Creative category"]), categorySelect]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Max stack size"]), stackInput]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Components"]),
+        el("div", { class: "pas-form-check" }, [el("label", {}, ["Hand equipped (shows as a held model, not flat)"]), handEquippedCheck]),
+        el("div", { class: "pas-form-check" }, [el("label", {}, ["Enchanted glint"]), glintCheck]),
+        el("div", { class: "pas-form-check" }, [el("label", {}, ["Edible (food)"]), foodCheck]),
+        foodFields,
+        el("div", { class: "pas-form-check" }, [el("label", {}, ["Has durability (can be damaged)"]), durabilityCheck]),
+        durabilityFields,
+      ]),
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              submitItemAdder({
+                rawIdentifier: idInput.value,
+                displayName: nameInput.value.trim(),
+                iconTexture: ContentBuilders.slugifyIdToken(iconInput.value),
+                category: categorySelect.value,
+                maxStackSize: stackInput.value,
+                handEquipped: handEquippedCheck.checked,
+                glint: glintCheck.checked,
+                food: foodCheck.checked,
+                foodNutrition: foodNutritionInput.value,
+                foodSaturation: foodSaturationInput.value,
+                foodCanAlwaysEat: foodAlwaysEatCheck.checked,
+                durability: durabilityCheck.checked,
+                maxDurability: maxDurabilityInput.value,
+              });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Add Item"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+    setTimeout(() => idInput.focus(), 60);
+  }
+
+  // Actually writes the new item's file(s) into whatever add-on project is
+  // currently in the explorer -- creating a brand new BP/RP pair first if
+  // the explorer is completely empty (see ensureAddonScaffold in
+  // app/mcContentBuilders.js for exactly how that decision is made).
+  function submitItemAdder(fields) {
+    const identifier = ContentBuilders.normalizeItemIdentifier(fields.rawIdentifier);
+    const shortName = identifier.split(":")[1];
+
+    const { bpRoot, rpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+
+    const json = ContentBuilders.buildItemFileJSON({ ...fields, identifier });
+    const desiredPath = joinPath(bpRoot, "items", `${shortName}.json`);
+    // createFile() already picks a unique "name (1).json" style path on its
+    // own if `desiredPath` is taken (see VFS.uniquePath in app/fs.js) --
+    // so this never silently clobbers an existing item with the same name.
+    const itemNode = vfs.createFile(desiredPath, json, { isText: true });
+
+    // Resource-pack side: only touch item_texture.json if we actually know
+    // where the resource pack lives AND the user gave us a texture short
+    // name to register -- an item with no icon set is still perfectly
+    // valid (it just uses Minecraft's default "missing texture" icon until
+    // one is added later), so this is best-effort, not required.
+    if (rpRoot && fields.iconTexture) {
+      const texturePath = joinPath(rpRoot, "textures", "item_texture.json");
+      const existing = vfs.get(texturePath);
+      const merged = ContentBuilders.mergeItemTextureJson(existing ? existing.content : null, fields.iconTexture, projectName);
+      if (existing) {
+        vfs.setContent(texturePath, merged);
+        if (editorManager.hasState(texturePath)) editorManager.setContent(texturePath, merged);
+      } else {
+        vfs.createFile(texturePath, merged, { isText: true });
+      }
+    }
+
+    // vfs.createFile() above already triggered a tree re-render via
+    // vfs.onChange -- openFile() below covers tabs/main-area/explorer
+    // (again, cheaply) for the newly created file becoming active.
+    closeContentPanel();
+    openFile(itemNode.path);
+    toast(createdNew ? `Created ${projectName}_BP/_RP and added "${identifier}".` : `Added item "${identifier}".`);
+  }
+
   return () => {
     window.removeEventListener("resize", syncViewportHeight);
     editorManager.destroy();
@@ -658,6 +870,10 @@ function buildShell() {
       accept=".js,.mjs,.cjs,.ts,.json,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tga,.mp3,.ogg,.wav,.md,.txt,.lang,.mcfunction,.material,.csv,.xml,.yml,.yaml" />
     <input id="pas-folder-input" type="file" multiple hidden webkitdirectory directory mozdirectory />
     <input id="pas-archive-input" type="file" hidden accept=".zip,.mcpack,.mcaddon,.mcworld,application/zip" />
+
+    <button id="pas-content-fab" class="pas-content-fab" aria-label="Add content">
+      <img src="create_icon.png" alt="" />
+    </button>
 
     <div id="pas-toast-host" class="pas-toast-host"></div>
   `;

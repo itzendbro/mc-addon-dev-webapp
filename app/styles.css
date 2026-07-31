@@ -450,6 +450,128 @@ code {
 .pas-help-list b { color: var(--text); }
 
 /* ---- toasts --------------------------------------------------------------- */
+/* ---- "Add content" floating action button --------------------------------
+   Sits bottom-right of the whole app shell (not just the editor area), just
+   above the status bar, on every screen (empty state, editor, preview) --
+   the epic content-adder feature should always be reachable, not just from
+   the empty-project screen. */
+.pas-content-fab {
+  position: fixed;
+  right: calc(14px + var(--safe-bottom, 0px));
+  bottom: calc(26px + 14px + var(--safe-bottom));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px #00000066;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 45;
+}
+.pas-content-fab img { width: 30px; height: 30px; image-rendering: pixelated; pointer-events: none; }
+.pas-content-fab:active { background: var(--bg-active); transform: scale(0.96); }
+
+/* ---- content-adder slide-over panel --------------------------------------- */
+.pas-content-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: min(92vw, 420px);
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  transform: translateX(105%);
+  transition: transform 0.22s ease;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+.pas-content-panel.is-open { transform: translateX(0); box-shadow: -8px 0 24px #00000066; }
+.pas-content-panel-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.pas-content-panel-header h2 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: 0.02em; }
+.pas-content-panel-body { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px calc(20px + var(--safe-bottom)); }
+.pas-content-scrim {
+  position: fixed;
+  inset: 0;
+  background: #00000066;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 55;
+}
+.pas-content-scrim.is-open { opacity: 1; pointer-events: auto; }
+
+/* -- content-type picker grid inside the panel -- */
+.pas-content-type-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.pas-content-type-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 16px 8px;
+  font-size: 13px;
+}
+.pas-content-type-btn .pas-content-type-icon { font-size: 26px; }
+.pas-content-type-btn:active { background: var(--bg-active); }
+.pas-content-type-btn[disabled] { opacity: 0.45; }
+.pas-content-type-btn .pas-content-type-soon { font-size: 10px; color: var(--text-faint); }
+
+/* -- item-adder form -- */
+.pas-form-section { margin-bottom: 18px; }
+.pas-form-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+}
+.pas-form-row { margin-bottom: 12px; }
+.pas-form-row label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.pas-form-row .pas-input,
+.pas-form-row select.pas-input {
+  width: 100%;
+}
+.pas-form-hint { font-size: 11.5px; color: var(--text-faint); margin-top: 5px; }
+.pas-form-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.pas-form-check:last-child { border-bottom: none; }
+.pas-form-check label { flex: 1; font-size: 13.5px; color: var(--text); margin: 0; }
+.pas-form-check input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent-strong); flex: none; }
+.pas-form-subfields { padding: 4px 0 10px 0; display: none; }
+.pas-form-subfields.is-visible { display: block; }
+.pas-form-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pas-form-back-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.pas-form-back-row button { background: transparent; border: none; color: var(--text-dim); font-size: 13px; padding: 4px 0; }
+.pas-form-submit-row { margin-top: 18px; display: flex; gap: 8px; justify-content: flex-end; }
+
 .pas-toast-host {
   position: fixed;
   left: 50%;
