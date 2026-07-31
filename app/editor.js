@@ -245,22 +245,34 @@ class EditorManager {
   // narrowed down by the file's path/name (manifest.json only gets manifest
   // tags, an entities/*.json file only gets entity component tags, etc, via
   // `contextForPath` in mcCompletions.js) so unrelated Bedrock JSON tags
-  // don't clutter every file. Files whose path doesn't match a recognised
-  // convention fall back to the full JSON snippet list rather than showing
-  // nothing. Within manifest.json specifically, entries additionally tagged
-  // with `packType: "bp"`/`"rp"` (e.g. the script module/dependency tags,
-  // which only make sense in a Behavior Pack manifest, or `raytraced`/
-  // `subpacks`, which are Resource Pack only) are further filtered using
-  // `packTypeForPath` -- the nearest ancestor folder named like a BP/RP
-  // folder (see mcCompletions.js) -- so a manifest inside a "MyAddon_RP"
-  // folder no longer suggests behavior-pack-only script module snippets,
-  // and vice versa. Untagged manifest entries (header, uuid, version, ...)
-  // are shared by both pack types and always shown.
+  // don't clutter every file. A JSON file whose path/name doesn't match any
+  // recognised convention gets NO Bedrock-specific suggestions (same as a
+  // plain .txt file) rather than falling back to the full, unfiltered
+  // ~90-entry JSON_SNIPPETS list -- that fallback used to dump all 90 tags
+  // into every unrecognised file (e.g. the literal default "new_file.json"
+  // name the New File dialog pre-fills), which meant every matching
+  // keystroke rebuilt and re-rendered up to 60 popup rows while the phone's
+  // on-screen keyboard was still actively composing that same keystroke.
+  // That's exactly the kind of extra synchronous DOM work that can jostle
+  // an in-flight Android IME composition and produce the "backspace/typing
+  // stops registering, old text reappears/sticks" symptoms -- and it only
+  // ever affected non-manifest.json files, since manifest.json's small
+  // filtered list never triggered that heavier path. Within manifest.json
+  // specifically, entries additionally tagged with `packType: "bp"`/`"rp"`
+  // (e.g. the script module/dependency tags, which only make sense in a
+  // Behavior Pack manifest, or `raytraced`/`subpacks`, which are Resource
+  // Pack only) are further filtered using `packTypeForPath` -- the nearest
+  // ancestor folder named like a BP/RP folder (see mcCompletions.js) -- so
+  // a manifest inside a "MyAddon_RP" folder no longer suggests
+  // behavior-pack-only script module snippets, and vice versa. Untagged
+  // manifest entries (header, uuid, version, ...) are shared by both pack
+  // types and always shown.
   _snippetsForActiveFile(ext) {
     if (ext === "js" || ext === "ts" || ext === "mjs" || ext === "cjs") return JS_SNIPPETS;
     if (ext !== "json") return null;
     const ctx = contextForPath(this.activePath);
-    let list = ctx ? JSON_SNIPPETS.filter((s) => !s.context || s.context === ctx) : JSON_SNIPPETS;
+    if (!ctx) return null;
+    let list = JSON_SNIPPETS.filter((s) => !s.context || s.context === ctx);
     if (ctx === "manifest") {
       const packType = packTypeForPath(this.activePath);
       if (packType) list = list.filter((s) => !s.packType || s.packType === packType);
