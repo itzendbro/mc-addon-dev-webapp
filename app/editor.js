@@ -199,12 +199,122 @@ class EditorManager {
         this.opts.onChange(this.activePath, cm.getValue());
       }
       this._maybeAutocomplete(changeObj);
+      this._scheduleLint();
     });
     this.cm.on("cursorActivity", () => {
       if (this.activePath && this.opts.onCursor) {
         this.opts.onCursor(this.activePath, this.getCursorInfo());
       }
     });
+
+    // ---- Syntax-error highlighting ("red squiggly", tap for message) -----
+    // See app/lint.js for the actual JSON/JS syntax checking. There's no
+    // mouse hover on a phone, so instead of a hover tooltip (the desktop
+    // convention this is modeled after -- VS Code's built-in diagnostics /
+    // the Error Lens extension) tapping directly on a squiggly shows a
+    // small popup with the message; tapping anywhere else dismisses it.
+    // Marks are plain CodeMirror TextMarkers tagged with a `pas-lint`
+    // property so they're easy to find-and-clear without touching markers
+    // from other features (search highlighting, matching brackets, ...).
+    this._lintTimer = null;
+    this._lintTooltip = null;
+    this.cm.getWrapperElement().addEventListener("click", (e) => this._onEditorTap(e));
+  }
+
+  _onEditorTap(e) {
+    this._hideLintTooltip();
+    const target = e.target;
+    if (!target || !target.classList || !target.classList.contains("cm-lint-squiggly")) return;
+    const cm = this.cm;
+    const pos = cm.coordsChar({ left: e.clientX, top: e.clientY }, "window");
+    const marks = cm.findMarksAt(pos).filter((m) => m.pasLint);
+    // findMarksAt can miss a mark when the tap lands exactly on its right
+    // edge (a one-past-the-end position isn't "at" the mark in CodeMirror's
+    // definition) -- which happens a lot on a touch target that's often
+    // only a character or two wide. Falling back to marks touching either
+    // side of the tapped column covers that without ever picking up an
+    // unrelated mark on a different line.
+    const all = marks.length ? marks : cm.findMarks({ line: pos.line, ch: Math.max(0, pos.ch - 1) }, { line: pos.line, ch: pos.ch + 1 }).filter((m) => m.pasLint);
+    if (!all.length) return;
+    e.stopPropagation();
+    this._showLintTooltip(target, all[0].pasLintMessage);
+  }
+
+  _showLintTooltip(anchorEl, message) {
+    this._hideLintTooltip();
+    const tip = document.createElement("div");
+    tip.className = "cm-lint-tooltip";
+    tip.textContent = message;
+    document.body.appendChild(tip);
+    const rect = anchorEl.getBoundingClientRect();
+    const wrapperRect = this.container.getBoundingClientRect();
+    // Clamp horizontally so the tooltip never spills off the left/right
+    // edge of the editor on a narrow phone screen.
+    let left = rect.left;
+    const maxLeft = wrapperRect.right - tip.offsetWidth - 8;
+    left = Math.max(wrapperRect.left + 8, Math.min(left, Math.max(maxLeft, wrapperRect.left + 8)));
+    tip.style.left = `${left}px`;
+    tip.style.top = `${rect.bottom + 4}px`;
+    requestAnimationFrame(() => tip.classList.add("is-visible"));
+    this._lintTooltip = tip;
+  }
+
+  _hideLintTooltip() {
+    if (!this._lintTooltip) return;
+    const tip = this._lintTooltip;
+    this._lintTooltip = null;
+    tip.remove();
+  }
+
+  _scheduleLint() {
+    clearTimeout(this._lintTimer);
+    // A deliberately short debounce -- unlike the autocomplete hint list
+    // (which does real DOM work per keystroke and was the actual root
+    // cause of a past mobile composition bug, see the comment on
+    // _maybeAutocomplete below), re-linting is cheap (a single parse
+    // attempt over the whole doc, no popup/DOM churn until something is
+    // actually tapped) so there's no need for the same caution here -- but
+    // it's still debounced rather than run synchronously on every
+    // keystroke so a fast typist doesn't re-parse the whole file after
+    // every single character.
+    this._lintTimer = setTimeout(() => this._relint(), 250);
+  }
+
+  _relint() {
+    const cm = this.cm;
+    const doc = this.docs.get(this.activePath);
+    const ext = doc ? doc.ext : "";
+    const linter = typeof lintForExt === "function" ? lintForExt(ext) : null;
+    // Always clear old marks first, even if there's no linter for this file
+    // type (or the doc is now empty) -- otherwise switching from a .json
+    // tab with an error straight to a .txt tab would leave stale squigglies
+    // rendered against the wrong document.
+    this._clearLintMarks();
+    this._hideLintTooltip();
+    if (!linter) return;
+    let issues;
+    try {
+      issues = linter(cm.getValue()) || [];
+    } catch (e) {
+      // A bug in the linter itself (or an input it can't handle) should
+      // never take down the editor -- silently skip highlighting for this
+      // pass rather than throwing out of a CodeMirror event handler.
+      issues = [];
+    }
+    for (const issue of issues) {
+      if (!issue || !issue.from || !issue.to) continue;
+      const marker = cm.markText(issue.from, issue.to, {
+        className: `cm-lint-squiggly cm-lint-squiggly-${issue.severity || "error"}`,
+      });
+      marker.pasLint = true;
+      marker.pasLintMessage = issue.message;
+    }
+  }
+
+  _clearLintMarks() {
+    for (const marker of this.cm.getAllMarks()) {
+      if (marker.pasLint) marker.clear();
+    }
   }
 
   _maybeAutocomplete(changeObj) {
@@ -297,11 +407,14 @@ class EditorManager {
   setContent(path, content) {
     const entry = this.docs.get(path);
     if (!entry) return;
-    // "+format" is a distinct origin from "setValue" so this still flows
-    // through the normal "change" handler (which persists it back to the
-    // VFS/localStorage) instead of being silently ignored the way a plain
-    // "setValue" origin is elsewhere in this file.
     entry.doc.setValue(content);
+    // Doc.setValue() always tags its change with origin "setValue", which
+    // the "change" handler above deliberately ignores (same as a doc's
+    // very first load) -- so it never reaches _scheduleLint() on its own.
+    // Only bother re-linting here if this doc is the one currently showing
+    // in the editor; a background tab's stale marks will get cleared and
+    // recomputed for free the next time it's switched to, via openFile().
+    if (path === this.activePath) this._scheduleLint();
   }
 
   openFile(path, content, ext) {
@@ -316,6 +429,8 @@ class EditorManager {
     this.cm.setOption("lineWrapping", this.wrapEnabled);
     this._refreshWhenVisible();
     this.cm.focus();
+    this._hideLintTooltip();
+    this._relint();
   }
 
   // The editor's container starts out `display: none` (the empty-state
@@ -413,6 +528,8 @@ class EditorManager {
   }
 
   destroy() {
+    clearTimeout(this._lintTimer);
+    this._hideLintTooltip();
     // CodeMirror 5 has no explicit destroy API; detaching the DOM node is
     // enough to let it get garbage collected.
     if (this.container) this.container.innerHTML = "";

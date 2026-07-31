@@ -39,12 +39,17 @@
     <script src="vendor/codemirror5/addon/dialog/dialog.js"></script>
     <script src="vendor/codemirror5/addon/search/search.js"></script>
     <script src="vendor/codemirror5/addon/hint/show-hint.js"></script>
+    <!-- Acorn: a small, standalone JS parser used only to statically detect
+         JS/TS syntax errors for the editor's error-highlighting feature
+         (never executed) -- see app/lint.js. -->
+    <script src="vendor/acorn/acorn.min.js"></script>
 
     <!-- ---- App source (plain JS, loaded in dependency order) ---- -->
     <script src="app/utils.js"></script>
     <script src="app/mcTemplates.js"></script>
     <script src="app/mcCompletions.js"></script>
     <script src="app/fs.js"></script>
+    <script src="app/lint.js"></script>
     <script src="app/editor.js"></script>
     <script src="app/explorer.js"></script>
     <script src="app/modals.js"></script>

@@ -166,25 +166,15 @@ function toast(message, opts) {
 }
 
 // ---------------------------------------------------------------------------
-// A small hand-rolled JSON pretty-printer used by the file explorer's
-// per-file "..." menu -> "Format JSON" action. Deliberately NOT implemented
-// as `JSON.stringify(JSON.parse(text))` -- that round-trip is lossy for
-// things creators actually rely on in Minecraft add-on JSON:
-//   - Parsing to a plain JS object silently reorders any purely-numeric
-//     string keys (e.g. a block-state/trading tier keyed "1", "2", ...)
-//     ahead of every other key, per the JS property-ordering spec.
-//   - Duplicate keys inside the same object (rare, but not unheard of after
-//     copy/pasting snippets) get silently collapsed to just the last one.
-//   - Every number gets re-rendered through JS's float-to-string
-//     formatting, so `1.0` becomes `1`, `5e2` becomes `500`, and very
-//     large/high-precision numbers can silently lose precision.
-// Any of those would quietly rewrite the *meaning* of the file, not just
-// its whitespace. Instead this walks the raw character stream once,
-// building a lightweight AST that keeps every string/number/keyword's
-// original source text verbatim, and re-emits it re-indented.
+// A small hand-rolled, loose-mode JSON parser shared by formatJSON() (the
+// file explorer's "Format JSON" action) and the JSON half of the editor's
+// live syntax-error highlighting (app/lint.js). "Loose" here just means it
+// keeps every string/number/keyword's *original source text* verbatim in a
+// lightweight AST instead of converting to real JS values -- see the
+// comment on formatJSON() below for why that matters. Throws an Error with
+// `.pos`/`.line`/`.col` (1-based) pointing at the first parse failure.
 // ---------------------------------------------------------------------------
-function formatJSON(text, indent) {
-  const unit = indent || "\t";
+function parseJsonLoose(text) {
   // Strip a leading UTF-8 BOM, if present (common in files saved/edited by
   // some Windows tools), so it doesn't get mistaken for a stray token.
   const src = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
@@ -196,6 +186,7 @@ function formatJSON(text, indent) {
     const line = (upTo.match(/\n/g) || []).length + 1;
     const col = i - upTo.lastIndexOf("\n");
     const err = new Error(message);
+    err.pos = i;
     err.line = line;
     err.col = col;
     throw err;
@@ -326,6 +317,31 @@ function formatJSON(text, indent) {
   const root = parseValue();
   skipWs();
   if (i < n) fail("Unexpected trailing content after the JSON value");
+  return root;
+}
+
+// ---------------------------------------------------------------------------
+// A small hand-rolled JSON pretty-printer used by the file explorer's
+// per-file "..." menu -> "Format JSON" action. Deliberately NOT implemented
+// as `JSON.stringify(JSON.parse(text))` -- that round-trip is lossy for
+// things creators actually rely on in Minecraft add-on JSON:
+//   - Parsing to a plain JS object silently reorders any purely-numeric
+//     string keys (e.g. a block-state/trading tier keyed "1", "2", ...)
+//     ahead of every other key, per the JS property-ordering spec.
+//   - Duplicate keys inside the same object (rare, but not unheard of after
+//     copy/pasting snippets) get silently collapsed to just the last one.
+//   - Every number gets re-rendered through JS's float-to-string
+//     formatting, so `1.0` becomes `1`, `5e2` becomes `500`, and very
+//     large/high-precision numbers can silently lose precision.
+// Any of those would quietly rewrite the *meaning* of the file, not just
+// its whitespace. Instead this walks the raw character stream once (via
+// parseJsonLoose(), shared with the editor's live JSON error-highlighting),
+// building a lightweight AST that keeps every string/number/keyword's
+// original source text verbatim, and re-emits it re-indented.
+// ---------------------------------------------------------------------------
+function formatJSON(text, indent) {
+  const unit = indent || "\t";
+  const root = parseJsonLoose(text);
 
   function print(node, depth) {
     if (node.type === "raw") return node.text;
@@ -344,4 +360,5 @@ function formatJSON(text, indent) {
 
   return print(root, 0);
 }
+
 
