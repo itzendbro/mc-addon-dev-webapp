@@ -193,7 +193,19 @@ code {
   top: 0;
   left: 0;
   bottom: 0;
-  width: var(--pas-linenumbers-width);
+  /* Deliberately no explicit `width` here. With `left` set and both
+     `right`/`width` left as `auto`, an absolutely positioned block sizes
+     itself to fit its content ("shrink-to-fit") -- so the sidebar just
+     naturally grows/shrinks with however many digits the highest line
+     number needs (e.g. "9" vs "99" vs "999"), the same way it would if it
+     were a normal (non-absolute) block. This also sidesteps a real bug
+     from an earlier version of this feature: computing the width in JS by
+     reading the element's own `offsetWidth` *after* setting its CSS width
+     from that same reading is circular and can never actually grow past
+     whatever width it happened to render at first (which is exactly what
+     silently clipped multi-digit line numbers/overlapped code on first
+     load). min-width keeps single-digit files from looking cramped. */
+  min-width: 24px;
   overflow: hidden;
   pointer-events: none; /* purely decorative -- taps pass through to the editor */
   user-select: none;

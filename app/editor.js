@@ -336,6 +336,17 @@ class EditorManager {
     // ever knowing it exists.
     this.lineNumbers = new LineNumberGutter(this.cm, container);
     this.lineNumbersEnabled = true;
+    // Actually apply the "enabled" visual state (the `pas-has-linenumbers`
+    // class that reserves horizontal space for the gutter via CSS) instead
+    // of just computing its width -- constructing LineNumberGutter already
+    // defaults `enabled` to true internally and renders it, but nothing
+    // was previously telling `container` to make room for it. Without
+    // this, the gutter -- which has an opaque background -- was drawn
+    // directly on top of the first several characters of every line by
+    // default, on every file, until the very first time a user manually
+    // toggled line numbers off and back on again from the More menu (the
+    // only code path that happened to call setEnabled()).
+    this.lineNumbers.setEnabled(true);
     this._syncGutterSpacing();
     // The gutter's rendered width changes as the line count crosses a
     // power of ten (e.g. "9" -> "10" needs one more digit's width), so
