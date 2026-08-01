@@ -631,7 +631,7 @@ function initApp(host) {
 
   const CONTENT_TYPES = [
     { id: "item", label: "Item", icon: "\u2694\uFE0F", enabled: true, render: renderItemAdderForm },
-    { id: "entity", label: "Entity", icon: "\u{1F9DF}", enabled: false },
+    { id: "entity", label: "Entity", icon: "\u{1F9DF}", enabled: true, render: renderEntityAdderForm },
     { id: "block", label: "Block", icon: "\u{1F9F1}", enabled: true, render: renderBlockAdderForm },
     { id: "sound", label: "Sound", icon: "\u{1F50A}", enabled: true, render: renderSoundAdderForm },
     { id: "splash", label: "Splash", icon: "\u{1F4A6}", enabled: true, render: renderSplashAdderForm },
@@ -1112,6 +1112,268 @@ function initApp(host) {
     closeContentPanel();
     openFile(blockNode.path);
     toast(createdNew ? `Created ${projectName}_BP/_RP and added "${identifier}".` : `Added block "${identifier}".`);
+  }
+
+  // ---- Entity adder --------------------------------------------------
+  // See https://learn.microsoft.com/minecraft/creator/.../entityreference
+  // and https://wiki.bedrock.dev/entities/entity-intro-rp. An entity is the
+  // one content type that always needs files in BOTH packs to actually
+  // work in game: a behavior file (BP, the mob's stats/AI/loot -- what it
+  // DOES) and a client entity file (RP, its texture/geometry/spawn egg --
+  // what it LOOKS like). Also offers an inline "egg editor" (the spawn egg
+  // base/overlay color pickers) and an inline loot table builder (a simple
+  // list of possible drops), both written as part of the same submission.
+  function renderEntityAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add Entity"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    const idInput = el("input", { class: "pas-input", type: "text", placeholder: "custom:magic_golem", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+
+    // ---- Texture: upload a PNG (preferred) or type a short name --------
+    let uploadedTextureFile = null; // { name, bytesB64 } | null
+    const textureFilePicker = el("input", { type: "file", accept: "image/png,.png", hidden: true });
+    const textureUploadStatus = el("div", { class: "pas-form-hint" }, ["No texture uploaded yet -- the entity will fall back to a placeholder texture until one is added."]);
+    const textureUploadBox = el(
+      "button",
+      { type: "button", class: "pas-icon-upload-box", onclick: () => textureFilePicker.click() },
+      [
+        el("span", { class: "pas-icon-upload-icon" }, ["\u{1F5BC}\uFE0F"]),
+        el("span", {}, ["Tap to upload an entity texture PNG"]),
+        el("span", { class: "pas-form-hint" }, ["Saved as textures/entity/<entity name>.png."]),
+      ]
+    );
+    textureFilePicker.addEventListener("change", async () => {
+      const file = textureFilePicker.files && textureFilePicker.files[0];
+      textureFilePicker.value = "";
+      if (!file) return;
+      try {
+        const buf = await file.arrayBuffer();
+        uploadedTextureFile = { name: file.name, bytesB64: bytesToB64(new Uint8Array(buf)) };
+        textureUploadBox.classList.add("has-file");
+        textureUploadStatus.textContent = `Uploaded "${file.name}" -- will be saved as textures/entity/<entity name>.png`;
+      } catch (err) {
+        console.error(err);
+        toast("Couldn't read that image file.", { type: "error" });
+      }
+    });
+
+    const geometryInput = el("input", { class: "pas-input", type: "text", placeholder: "geometry.humanoid.custom (leave blank for a default humanoid model)", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+
+    // ---- Egg editor: spawn egg base/overlay colors ----------------------
+    const eggBaseColor = el("input", { type: "color", class: "pas-color-input", value: "#4a6b3a" });
+    const eggOverlayColor = el("input", { type: "color", class: "pas-color-input", value: "#28331f" });
+    const eggPreview = el("div", { class: "pas-egg-preview" }, [el("div", { class: "pas-egg-preview-overlay" })]);
+    function syncEggPreview() {
+      eggPreview.style.background = eggBaseColor.value;
+      eggPreview.querySelector(".pas-egg-preview-overlay").style.background = eggOverlayColor.value;
+    }
+    eggBaseColor.addEventListener("input", syncEggPreview);
+    eggOverlayColor.addEventListener("input", syncEggPreview);
+    syncEggPreview();
+
+    // ---- Every official entity behavior component, generically ---------
+    const componentReaders = []; // [{ key, enabledCheck, readValues }]
+    const componentRows = ContentBuilders.ENTITY_COMPONENT_SCHEMA.map((entry) => {
+      const enabledCheck = el("input", { type: "checkbox" });
+      const { fieldsEl, readValues } = buildComponentSubfields(entry);
+      enabledCheck.addEventListener("change", () => fieldsEl.classList.toggle("is-visible", enabledCheck.checked));
+      componentReaders.push({ key: entry.key, enabledCheck, readValues });
+      return el("div", { class: "pas-component-block" }, [
+        el("div", { class: "pas-form-check" }, [
+          el("div", { class: "pas-component-label" }, [
+            el("label", {}, [entry.label]),
+            el("div", { class: "pas-form-hint" }, [entry.detail]),
+          ]),
+          enabledCheck,
+        ]),
+        fieldsEl,
+      ]);
+    });
+
+    // ---- Loot table builder: a plain list of possible drops -------------
+    // See buildLootTableJSON() in app/mcContentBuilders.js for exactly what
+    // shape of loot_tables/entities/<name>.json this produces -- a single
+    // weighted-random pool, one entry per row here.
+    const lootEnabledCheck = el("input", { type: "checkbox" });
+    const lootRowsEl = el("div", { class: "pas-loot-rows" });
+    const lootRows = []; // [{ itemInput, weightInput, minInput, maxInput, rowEl }]
+    function addLootRow() {
+      const itemInput = el("input", { class: "pas-input", type: "text", placeholder: "minecraft:bone", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+      const weightInput = el("input", { class: "pas-input", type: "number", value: "1", min: "1", inputmode: "numeric" });
+      const minInput = el("input", { class: "pas-input", type: "number", value: "1", min: "0", inputmode: "numeric" });
+      const maxInput = el("input", { class: "pas-input", type: "number", value: "1", min: "0", inputmode: "numeric" });
+      const rowEl = el("div", { class: "pas-loot-row" }, [
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Item"]), itemInput]),
+        el("div", { class: "pas-form-two-col" }, [
+          el("div", { class: "pas-form-row" }, [el("label", {}, ["Min count"]), minInput]),
+          el("div", { class: "pas-form-row" }, [el("label", {}, ["Max count"]), maxInput]),
+        ]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Weight (relative drop chance)"]), weightInput]),
+        el("button", {
+          type: "button",
+          class: "pas-loot-row-remove",
+          onclick: () => {
+            const idx = lootRows.findIndex((r) => r.rowEl === rowEl);
+            if (idx !== -1) lootRows.splice(idx, 1);
+            rowEl.remove();
+          },
+        }, ["Remove drop"]),
+      ]);
+      lootRows.push({ itemInput, weightInput, minInput, maxInput, rowEl });
+      lootRowsEl.appendChild(rowEl);
+    }
+    addLootRow();
+    const addLootRowBtn = el("button", { type: "button", class: "pas-btn pas-btn-ghost", onclick: addLootRow }, ["+ Add another drop"]);
+    const lootFields = el("div", { class: "pas-form-subfields" }, [lootRowsEl, addLootRowBtn]);
+    lootEnabledCheck.addEventListener("change", () => lootFields.classList.toggle("is-visible", lootEnabledCheck.checked));
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Identity"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Entity ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace."])]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Appearance"]),
+        el("div", { class: "pas-form-row" }, [
+          el("label", {}, ["Entity texture"]),
+          textureUploadBox,
+          textureFilePicker,
+          textureUploadStatus,
+        ]),
+        el("div", { class: "pas-form-row" }, [
+          el("label", {}, ["Model geometry identifier (optional)"]),
+          geometryInput,
+          el("div", { class: "pas-form-hint" }, ["Matches the \"identifier\" of a model you made in Blockbench. Leave blank to use a default humanoid shape."]),
+        ]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Spawn Egg"]),
+        el("div", { class: "pas-egg-editor" }, [
+          eggPreview,
+          el("div", { class: "pas-egg-editor-fields" }, [
+            el("div", { class: "pas-form-row" }, [el("label", {}, ["Base color"]), eggBaseColor]),
+            el("div", { class: "pas-form-row" }, [el("label", {}, ["Overlay (spots) color"]), eggOverlayColor]),
+          ]),
+        ]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Components"]),
+        el("div", { class: "pas-form-hint", style: "margin-bottom:10px" }, ["The most common entity behavior components -- tap a switch to reveal its options."]),
+        ...componentRows,
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Loot Table"]),
+        el("div", { class: "pas-form-check" }, [
+          el("div", { class: "pas-component-label" }, [
+            el("label", {}, ["Drops items on death"]),
+            el("div", { class: "pas-form-hint" }, ["Builds a loot_tables/entities/<name>.json and wires it up automatically."]),
+          ]),
+          lootEnabledCheck,
+        ]),
+        lootFields,
+      ]),
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              const components = {};
+              for (const { key, enabledCheck, readValues } of componentReaders) {
+                components[key] = { enabled: enabledCheck.checked, ...readValues() };
+              }
+              const drops = lootEnabledCheck.checked
+                ? lootRows.map((r) => ({ item: r.itemInput.value, weight: r.weightInput.value, minCount: r.minInput.value, maxCount: r.maxInput.value }))
+                : [];
+              submitEntityAdder({
+                rawIdentifier: idInput.value,
+                textureFile: uploadedTextureFile,
+                geometryId: geometryInput.value.trim(),
+                spawnEggBaseColor: eggBaseColor.value,
+                spawnEggOverlayColor: eggOverlayColor.value,
+                components,
+                lootEnabled: lootEnabledCheck.checked,
+                drops,
+              });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Add Entity"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+    setTimeout(() => idInput.focus(), 60);
+  }
+
+  // Actually writes the new entity's file(s) into whatever add-on project
+  // is currently in the explorer -- creating a brand new BP/RP pair first
+  // if the explorer is completely empty (see ensureAddonScaffold in
+  // app/mcContentBuilders.js). Unlike Item/Block/Sound/Splash, an entity
+  // ALWAYS gets files in both packs (a behavior file needs a matching
+  // client entity file to actually be visible in game, and vice versa).
+  function submitEntityAdder(fields) {
+    const identifier = ContentBuilders.normalizeNamespacedIdentifier(fields.rawIdentifier, "Entity ID");
+    const shortName = identifier.split(":")[1];
+
+    const { bpRoot, rpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+
+    // Loot table (BP-side) is written first, if requested, so the behavior
+    // file below can reference it via minecraft:loot. Two different paths
+    // are needed here: the VFS needs the FULL path (including bpRoot) to
+    // actually create the file in the right place in the tree, but the
+    // `minecraft:loot` component's "table" value must be relative to the
+    // behavior pack's own root (e.g. "loot_tables/entities/war_hog.json",
+    // never "MyAddon_BP/loot_tables/entities/war_hog.json") -- Minecraft
+    // resolves that path from inside the pack itself, so including the
+    // pack's own folder name in it would make the reference resolve to a
+    // nonexistent nested path and silently produce no loot in game.
+    let lootTableRefPath = null;
+    if (fields.lootEnabled && fields.drops.some((d) => d.item && d.item.trim())) {
+      lootTableRefPath = joinPath("loot_tables", "entities", `${shortName}.json`);
+      const lootFullPath = joinPath(bpRoot, lootTableRefPath);
+      const lootJson = ContentBuilders.buildLootTableJSON(fields.drops);
+      vfs.createFile(lootFullPath, lootJson, { isText: true });
+    }
+
+    const behaviorJson = ContentBuilders.buildEntityBehaviorJSON({ ...fields, identifier, lootTablePath: lootTableRefPath });
+    const behaviorPath = joinPath(bpRoot, "entities", `${shortName}.json`);
+    // createFile() already picks a unique "name (1).json" style path on its
+    // own if `behaviorPath` is taken (see VFS.uniquePath in app/fs.js) --
+    // so this never silently clobbers an existing entity with the same
+    // name.
+    const behaviorNode = vfs.createFile(behaviorPath, behaviorJson, { isText: true });
+
+    // Client entity (RP-side): only skipped entirely if we truly can't
+    // find/create an RP location at all -- an entity with no client file
+    // is invisible/uninteractable in game, so unlike an item's optional
+    // icon this one is not "best-effort", but there's still nothing
+    // sensible to do if there's genuinely no RP folder in the project.
+    if (rpRoot) {
+      const clientJson = ContentBuilders.buildEntityClientJSON({ ...fields, identifier });
+      const clientPath = joinPath(rpRoot, "entity", `${shortName}.entity.json`);
+      vfs.createFile(clientPath, clientJson, { isText: true });
+      if (fields.textureFile) {
+        const pngPath = joinPath(rpRoot, "textures", "entity", `${shortName}.png`);
+        vfs.createFile(pngPath, fields.textureFile.bytesB64, { isText: false });
+      }
+    }
+
+    closeContentPanel();
+    openFile(behaviorNode.path);
+    toast(createdNew ? `Created ${projectName}_BP/_RP and added "${identifier}".` : `Added entity "${identifier}".`);
   }
 
   // ---- Splash adder -------------------------------------------------------

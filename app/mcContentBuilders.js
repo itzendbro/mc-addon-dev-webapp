@@ -992,6 +992,432 @@ function mergeTerrainTextureJson(existingContent, shortName, rpPackName) {
 }
 
 // ---------------------------------------------------------------------------
+// Full official entity BEHAVIOR component schema -- same shape/purpose as
+// ITEM_COMPONENT_SCHEMA/BLOCK_COMPONENT_SCHEMA above. Every entry
+// corresponds to a documented behavior-pack entity component (see
+// https://learn.microsoft.com/minecraft/creator/.../entityreference and
+// https://wiki.bedrock.dev/entities/vanilla-usage-components). Covers the
+// components a hand-authored custom mob most commonly needs -- health,
+// movement/navigation/AI goals, collision, physics, taming/breeding,
+// combat, despawning, knockback, and the loot/equipment tables -- rather
+// than literally all 200+ vanilla-usage components (many of which only
+// make sense wired up to a specific existing vanilla behavior and would
+// just be dead weight in a generic form). minecraft:type_family is always
+// written automatically (see buildEntityBehaviorJSON) since practically
+// every custom mob needs at least "mob" in its family list for other
+// vanilla systems (targeting, spawn eggs, etc) to treat it correctly, so
+// it isn't a toggle here.
+// ---------------------------------------------------------------------------
+const ENTITY_COMPONENT_SCHEMA = [
+  {
+    key: "healthEnabled",
+    component: "minecraft:health",
+    label: "Health",
+    detail: "Max/starting hit points.",
+    fields: [{ name: "healthValue", type: "number", label: "Health", def: "20" }],
+    build: (v) => ({ value: clampInt(v.healthValue, 20, 1), max: clampInt(v.healthValue, 20, 1) }),
+  },
+  {
+    key: "collisionBoxEnabled",
+    component: "minecraft:collision_box",
+    label: "Collision box size",
+    detail: "The entity's physical width/height for collision purposes.",
+    fields: [
+      { name: "collisionWidth", type: "number", label: "Width", def: "0.6", step: "0.1" },
+      { name: "collisionHeight", type: "number", label: "Height", def: "1.8", step: "0.1" },
+    ],
+    build: (v) => ({ width: numberOr(v.collisionWidth, 0.6), height: numberOr(v.collisionHeight, 1.8) }),
+  },
+  {
+    key: "physicsEnabled",
+    component: "minecraft:physics",
+    label: "Physics (gravity + collision)",
+    detail: "Gives the entity gravity and lets it collide with blocks -- almost always wanted.",
+    fields: [],
+    build: () => ({}),
+  },
+  {
+    key: "nameableEnabled",
+    component: "minecraft:nameable",
+    label: "Nameable",
+    detail: "Can be renamed with a name tag.",
+    fields: [],
+    build: () => ({}),
+  },
+  {
+    key: "movementSpeedEnabled",
+    component: "minecraft:movement",
+    label: "Movement speed",
+    detail: "How fast the entity walks.",
+    fields: [{ name: "movementSpeed", type: "number", label: "Speed", def: "0.25", step: "0.05" }],
+    build: (v) => ({ value: numberOr(v.movementSpeed, 0.25) }),
+  },
+  {
+    key: "basicMovementEnabled",
+    component: "minecraft:movement.basic",
+    label: "Basic ground movement",
+    detail: "Standard walking movement, like most land mobs.",
+    fields: [],
+    build: () => ({}),
+  },
+  {
+    key: "walkNavigationEnabled",
+    component: "minecraft:navigation.walk",
+    label: "Walking navigation/pathfinding",
+    detail: "Lets the entity path around obstacles on the ground.",
+    fields: [
+      { name: "canPathOverWater", type: "checkbox", label: "Can path over water" },
+      { name: "avoidWater", type: "checkbox", label: "Avoid water", def: true },
+    ],
+    build: (v) => ({ can_path_over_water: !!v.canPathOverWater, avoid_water: v.avoidWater !== false }),
+  },
+  {
+    key: "jumpStaticEnabled",
+    component: "minecraft:jump.static",
+    label: "Can jump",
+    detail: "Standard jump height, needed to hop over 1-block obstacles.",
+    fields: [],
+    build: () => ({}),
+  },
+  {
+    key: "canFlyEnabled",
+    component: "minecraft:can_fly",
+    label: "Can fly",
+    detail: "Pathfinder won't require solid ground underneath.",
+    fields: [],
+    build: () => true,
+  },
+  {
+    key: "floatsInLiquidEnabled",
+    component: "minecraft:floats_in_liquid",
+    label: "Floats in liquid",
+    detail: "Bobs on the surface of water/lava instead of sinking.",
+    fields: [],
+    build: () => ({}),
+  },
+  {
+    key: "attackEnabled",
+    component: "minecraft:attack",
+    label: "Melee attack damage",
+    detail: "How much damage this entity deals when it attacks.",
+    fields: [{ name: "attackDamage", type: "number", label: "Damage", def: "2" }],
+    build: (v) => ({ damage: clampInt(v.attackDamage, 2, 0) }),
+  },
+  {
+    key: "meleeAttackBehaviorEnabled",
+    component: "minecraft:behavior.melee_attack",
+    label: "AI: Melee attack goal",
+    detail: "Actually chases and attacks its target -- pair with Attack Damage and a target-selection goal below.",
+    fields: [
+      { name: "meleePriority", type: "number", label: "Priority (lower = more important)", def: "2" },
+      { name: "meleeSpeed", type: "number", label: "Speed multiplier", def: "1.0", step: "0.1" },
+    ],
+    build: (v) => ({ priority: clampInt(v.meleePriority, 2, 0), speed_multiplier: numberOr(v.meleeSpeed, 1.0), track_target: true }),
+  },
+  {
+    key: "nearestAttackableTargetEnabled",
+    component: "minecraft:behavior.nearest_attackable_target",
+    label: "AI: Target nearest player",
+    detail: "Picks the closest player to attack -- pairs with Melee Attack goal above for a hostile mob.",
+    fields: [
+      { name: "targetPriority", type: "number", label: "Priority", def: "2" },
+      { name: "targetMaxDist", type: "number", label: "Max detection distance", def: "16" },
+    ],
+    build: (v) => ({
+      priority: clampInt(v.targetPriority, 2, 0),
+      reselect_targets: true,
+      entity_types: [{ filters: { test: "is_family", subject: "other", value: "player" }, max_dist: clampInt(v.targetMaxDist, 16, 1) }],
+    }),
+  },
+  {
+    key: "hurtByTargetEnabled",
+    component: "minecraft:behavior.hurt_by_target",
+    label: "AI: Retaliate when hurt",
+    detail: "Starts targeting whatever just attacked it.",
+    fields: [{ name: "hurtByPriority", type: "number", label: "Priority", def: "1" }],
+    build: (v) => ({ priority: clampInt(v.hurtByPriority, 1, 0) }),
+  },
+  {
+    key: "randomStrollEnabled",
+    component: "minecraft:behavior.random_stroll",
+    label: "AI: Wander around randomly",
+    detail: "Idle wandering behavior, like passive mobs grazing around.",
+    fields: [
+      { name: "strollPriority", type: "number", label: "Priority", def: "6" },
+      { name: "strollSpeed", type: "number", label: "Speed multiplier", def: "1.0", step: "0.1" },
+    ],
+    build: (v) => ({ priority: clampInt(v.strollPriority, 6, 0), speed_multiplier: numberOr(v.strollSpeed, 1.0) }),
+  },
+  {
+    key: "lookAtPlayerEnabled",
+    component: "minecraft:behavior.look_at_player",
+    label: "AI: Look at nearby players",
+    detail: "Turns its head to face a nearby player, purely cosmetic.",
+    fields: [
+      { name: "lookPriority", type: "number", label: "Priority", def: "7" },
+      { name: "lookDistance", type: "number", label: "Look distance", def: "6" },
+    ],
+    build: (v) => ({ priority: clampInt(v.lookPriority, 7, 0), look_distance: numberOr(v.lookDistance, 6) }),
+  },
+  {
+    key: "breathableEnabled",
+    component: "minecraft:breathable",
+    label: "Breathable (needs air)",
+    detail: "Can drown if submerged too long -- omit for fish/aquatic mobs.",
+    fields: [{ name: "airSupply", type: "number", label: "Total air supply (ticks)", def: "15" }],
+    build: (v) => ({ total_supply: clampInt(v.airSupply, 15, 1), suffocate_time: 0 }),
+  },
+  {
+    key: "scaleEnabled",
+    component: "minecraft:scale",
+    label: "Scale (size multiplier)",
+    detail: "Makes the whole model bigger/smaller.",
+    fields: [{ name: "scaleValue", type: "number", label: "Scale", def: "1.0", step: "0.1" }],
+    build: (v) => ({ value: numberOr(v.scaleValue, 1.0) }),
+  },
+  {
+    key: "despawnEnabled",
+    component: "minecraft:despawn",
+    label: "Despawns when far from players",
+    detail: "Standard despawn rules for unnamed, non-persistent mobs.",
+    fields: [],
+    build: () => ({ despawn_from_distance: {} }),
+  },
+  {
+    key: "rideableEnabled",
+    component: "minecraft:rideable",
+    label: "Rideable",
+    detail: "Lets a player sit on/ride this entity.",
+    fields: [{ name: "rideableSeatCount", type: "number", label: "Seat count", def: "1" }],
+    build: (v) => ({
+      seat_count: clampInt(v.rideableSeatCount, 1, 1),
+      family_types: ["player"],
+      seats: { position: [0, 0.5, 0] },
+    }),
+  },
+  {
+    key: "tameableEnabled",
+    component: "minecraft:tameable",
+    label: "Tameable",
+    detail: "Can be tamed with a specific item, like wolves with bones.",
+    fields: [
+      { name: "tameProbability", type: "number", label: "Tame chance per attempt (0-1)", def: "0.3", step: "0.05" },
+      { name: "tameItems", type: "text", label: "Tame item(s), comma separated", def: "minecraft:bone" },
+    ],
+    build: (v) => {
+      const items = csvToArray(v.tameItems);
+      return { probability: numberOr(v.tameProbability, 0.3), tame_items: items.length > 1 ? items : items[0] || "minecraft:bone" };
+    },
+  },
+  {
+    key: "breedableEnabled",
+    component: "minecraft:breedable",
+    label: "Breedable",
+    detail: "Two of this entity can breed to make a baby when fed the right item.",
+    fields: [
+      { name: "breedItems", type: "text", label: "Breed item(s), comma separated", def: "minecraft:wheat" },
+      { name: "requireTame", type: "checkbox", label: "Must be tamed first" },
+    ],
+    build: (v) => {
+      const items = csvToArray(v.breedItems);
+      return {
+        require_tame: !!v.requireTame,
+        breeds_with: { mate_type: "SELF_IDENTIFIER", baby_type: "SELF_IDENTIFIER", breed_event: { event: "minecraft:entity_born", target: "baby" } },
+        breed_items: items.length > 1 ? items : items[0] || "minecraft:wheat",
+      };
+    },
+  },
+  {
+    key: "ageableEnabled",
+    component: "minecraft:ageable",
+    label: "Ageable (baby/adult)",
+    detail: "Spawns as a baby that grows into an adult over time -- pairs well with Breedable.",
+    fields: [
+      { name: "ageDuration", type: "number", label: "Grow-up duration (seconds)", def: "1200" },
+      { name: "ageFeedItems", type: "text", label: "Feed items to speed growth (comma separated)", def: "minecraft:wheat" },
+    ],
+    build: (v) => ({
+      duration: clampInt(v.ageDuration, 1200, 1),
+      feed_items: csvToArray(v.ageFeedItems).length ? csvToArray(v.ageFeedItems) : ["minecraft:wheat"],
+      grow_up: { event: "minecraft:ageable_grow_up", target: "self" },
+    }),
+  },
+  {
+    key: "followRangeEnabled",
+    component: "minecraft:follow_range",
+    label: "Follow/aggro range",
+    detail: "Max distance a mob will pursue its target.",
+    fields: [{ name: "followRangeValue", type: "number", label: "Range (blocks)", def: "32" }],
+    build: (v) => ({ value: numberOr(v.followRangeValue, 32) }),
+  },
+  {
+    key: "knockbackResistanceEnabled",
+    component: "minecraft:knockback_resistance",
+    label: "Knockback resistance",
+    detail: "0 = normal knockback, 1 = completely immune.",
+    fields: [{ name: "knockbackValue", type: "number", label: "Resistance (0-1)", def: "0", step: "0.1" }],
+    build: (v) => ({ value: Math.min(1, Math.max(0, numberOr(v.knockbackValue, 0))) }),
+  },
+  {
+    key: "fireImmuneEnabled",
+    component: "minecraft:fire_immune",
+    label: "Fire immune",
+    detail: "Never takes damage from fire or lava.",
+    fields: [],
+    build: () => true,
+  },
+  {
+    key: "burnsInDaylightEnabled",
+    component: "minecraft:burns_in_daylight",
+    label: "Burns in daylight",
+    detail: "Takes fire damage in direct sunlight, like zombies/skeletons.",
+    fields: [],
+    build: () => ({}),
+  },
+  {
+    key: "leashableEnabled",
+    component: "minecraft:leashable",
+    label: "Leashable",
+    detail: "Can be attached to a lead.",
+    fields: [{ name: "leashMaxDistance", type: "number", label: "Max lead distance before it snaps", def: "10" }],
+    build: (v) => ({ soft_distance: 4.0, hard_distance: 6.0, max_distance: numberOr(v.leashMaxDistance, 10) }),
+  },
+  {
+    key: "experienceRewardEnabled",
+    component: "minecraft:experience_reward",
+    label: "Grants XP on death",
+    detail: "How much experience the player gets for killing this entity.",
+    fields: [{ name: "xpOnDeath", type: "number", label: "XP amount", def: "5" }],
+    build: (v) => ({ on_death: String(clampInt(v.xpOnDeath, 5, 0)) }),
+  },
+  {
+    key: "equipmentEnabled",
+    component: "minecraft:equipment",
+    label: "Uses an equipment loot table",
+    detail: "Randomly equips items (armor/weapons) on spawn from a loot table.",
+    fields: [{ name: "equipmentTablePath", type: "text", label: "Equipment table path", placeholder: "loot_tables/entities/my_mob_equipment.json" }],
+    build: (v) => ({ table: (v.equipmentTablePath || "").trim() || "loot_tables/entities/equipment.json" }),
+  },
+  {
+    key: "isHiddenWhenInvisibleEnabled",
+    component: "minecraft:is_hidden_when_invisible",
+    label: "Fully invisible with Invisibility",
+    detail: "Hides armor/name tag too when affected by an invisibility effect.",
+    fields: [],
+    build: () => ({}),
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Entity behavior-file (BP) JSON builder.
+// ---------------------------------------------------------------------------
+
+// `fields.components` is the same { [schemaEntry.key]: { enabled, ...values } }
+// shape used by the Item/Block adders. Always writes minecraft:type_family
+// (["mob", <own short name>]) since that's needed by other vanilla systems
+// (targeting filters, spawn eggs, /summon family selectors) even on a
+// minimal mob, and always sets is_spawnable/is_summonable so the entity
+// actually shows up as usable immediately (matching the official "Creating
+// New Entity Types" tutorial's own minimal example).
+function buildEntityBehaviorJSON(fields) {
+  const shortName = fields.identifier.split(":")[1];
+  const components = {};
+  components["minecraft:type_family"] = { family: ["mob", shortName] };
+
+  const chosen = fields.components || {};
+  for (const entry of ENTITY_COMPONENT_SCHEMA) {
+    const values = chosen[entry.key];
+    if (!values || !values.enabled) continue;
+    let result = entry.build(values);
+    // minecraft:breedable's breeds_with needs to reference this entity's
+    // OWN identifier for mate_type/baby_type (a same-species breed) --
+    // filled in here (once the real identifier is known) rather than
+    // inside the schema entry itself, which has no way to know it.
+    if (entry.key === "breedableEnabled" && result && result.breeds_with) {
+      result = {
+        ...result,
+        breeds_with: { ...result.breeds_with, mate_type: fields.identifier, baby_type: fields.identifier },
+      };
+    }
+    components[entry.component] = result;
+  }
+
+  if (fields.lootTablePath) {
+    components["minecraft:loot"] = { table: fields.lootTablePath };
+  }
+
+  const description = {
+    identifier: fields.identifier,
+    is_spawnable: true,
+    is_summonable: true,
+    is_experimental: false,
+  };
+
+  const root = {
+    format_version: "1.21.80",
+    "minecraft:entity": { description, components },
+  };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Entity client (RP) JSON builder -- see
+// https://wiki.bedrock.dev/entities/entity-intro-rp. Defines the visual
+// side: a texture/geometry/material shortname triple plus (optionally) a
+// spawn egg color pair, wired into a single default render controller so
+// the entity actually renders as *something* immediately (a textured cube
+// via the built-in "geometry.humanoid" fallback when no real custom model
+// exists yet) rather than being invisible.
+// ---------------------------------------------------------------------------
+function buildEntityClientJSON(fields) {
+  const shortName = fields.identifier.split(":")[1];
+  const description = {
+    identifier: fields.identifier,
+    materials: { default: "entity_alphatest" },
+    textures: { default: fields.entityTexture ? `textures/entity/${shortName}` : "textures/entity/steve" },
+    geometry: { default: fields.geometryId || "geometry.humanoid.custom" },
+    render_controllers: ["controller.render.default"],
+  };
+  if (fields.spawnEggBaseColor) {
+    description.spawn_egg = { base_color: fields.spawnEggBaseColor, overlay_color: fields.spawnEggOverlayColor || fields.spawnEggBaseColor };
+  }
+  const root = {
+    format_version: "1.10.0",
+    "minecraft:client_entity": { description },
+  };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Loot table builder -- see https://wiki.bedrock.dev/loot/loot-tables and
+// https://learn.microsoft.com/minecraft/creator/documents/createloottable.
+// `drops` is an array of { item, weight, minCount, maxCount } -- rendered
+// as a single pool with `rolls: 1` and one entry per drop, each optionally
+// wrapped in a minecraft:set_count function when a count range was given
+// (matching the exact function shape used in every official example).
+// Deliberately supports only this one common shape (a flat list of
+// possible single-roll drops) rather than the full recursive
+// pools/conditions/functions grammar loot tables can express -- covers the
+// overwhelming majority of "what does this custom mob drop" use cases
+// without needing a mini rules-editor UI for the long tail of advanced
+// cases (nested pools, kill-conditions, loot_table-type sub-entries, ...).
+function buildLootTableJSON(drops) {
+  const entries = (drops || [])
+    .filter((d) => d.item && d.item.trim())
+    .map((d) => {
+      const entry = { type: "item", name: d.item.trim(), weight: clampInt(d.weight, 1, 1) };
+      const min = clampInt(d.minCount, 1, 0);
+      const max = clampInt(d.maxCount, 1, 0);
+      if (min !== 1 || max !== 1) {
+        entry.functions = [{ function: "set_count", count: min === max ? min : { min: Math.min(min, max), max: Math.max(min, max) } }];
+      }
+      return entry;
+    });
+  const root = { pools: entries.length ? [{ rolls: 1, entries }] : [] };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// ---------------------------------------------------------------------------
 // Splash text builder -- see https://wiki.bedrock.dev/text/splashes.
 // splashes.json lives directly at the resource pack root (not inside a
 // subfolder) and has just two fields: `canMerge` (whether vanilla's own
@@ -1105,8 +1531,12 @@ window.ContentBuilders = {
   mergeMusicDefinitionsJson,
   buildBlockFileJSON,
   mergeTerrainTextureJson,
+  buildEntityBehaviorJSON,
+  buildEntityClientJSON,
+  buildLootTableJSON,
   ITEM_COMPONENT_SCHEMA,
   BLOCK_COMPONENT_SCHEMA,
+  ENTITY_COMPONENT_SCHEMA,
 };
 
 
