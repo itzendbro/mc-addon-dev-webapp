@@ -635,6 +635,7 @@ function initApp(host) {
     { id: "block", label: "Block", icon: "\u{1F9F1}", enabled: true, render: renderBlockAdderForm },
     { id: "sound", label: "Sound", icon: "\u{1F50A}", enabled: true, render: renderSoundAdderForm },
     { id: "splash", label: "Splash", icon: "\u{1F4A6}", enabled: true, render: renderSplashAdderForm },
+    { id: "function", label: "Function", icon: "\u{1F4DC}", enabled: true, render: renderFunctionAdderForm },
   ];
 
   function renderContentTypePicker() {
@@ -1510,6 +1511,164 @@ function initApp(host) {
     toast(createdNew
       ? `Created ${projectName}_BP/_RP and added ${count} splash${count === 1 ? "" : "es"}.`
       : `Added ${count} splash${count === 1 ? "" : "es"}.`);
+  }
+
+  // ---- Function adder -------------------------------------------------
+  // See https://minecraft.wiki/w/Function_(Bedrock_Edition) -- a Bedrock
+  // function is the simplest content type by far: a plain-text
+  // .mcfunction file (one command per line, no leading "/") living under
+  // BP/functions/, referenced purely by its own relative file path (never
+  // a namespace:name identifier the way every other content type here
+  // uses). Optionally hooked up to run every game tick via
+  // BP/functions/tick.json, the one and only function tag Bedrock
+  // actually supports (there's no load.json/other tags the way Java data
+  // packs have one).
+  function renderFunctionAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add Function"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    const pathInput = el("input", { class: "pas-input", type: "text", placeholder: "combat/heal (no .mcfunction, folders allowed)", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const commandsInput = el("textarea", {
+      class: "pas-input pas-textarea",
+      rows: "8",
+      placeholder: "say Hello!\ngive @p minecraft:apple 1\n# comments start with a #",
+      autocapitalize: "off",
+      spellcheck: "false",
+    });
+    const runEveryTickCheck = el("input", { type: "checkbox" });
+
+    // Tapping a command chip inserts it as a brand new line at the
+    // textarea's current cursor position -- same interaction pattern as
+    // the Splash adder's "\u00A7 formatting code" chips, just inserting a
+    // whole line instead of a single character sequence.
+    const insertCommandLine = (command) => {
+      const value = commandsInput.value;
+      const start = commandsInput.selectionStart ?? value.length;
+      const end = commandsInput.selectionEnd ?? value.length;
+      const needsLeadingNewline = start > 0 && value[start - 1] !== "\n";
+      const insertion = (needsLeadingNewline ? "\n" : "") + command + "\n";
+      commandsInput.value = value.slice(0, start) + insertion + value.slice(end);
+      const newPos = start + insertion.length;
+      commandsInput.focus();
+      commandsInput.setSelectionRange(newPos, newPos);
+    };
+    const commandChips = el(
+      "div",
+      { class: "pas-splash-chip-row" },
+      ContentBuilders.FUNCTION_COMMAND_SNIPPETS.map(([command, label]) =>
+        el("button", { type: "button", class: "pas-splash-chip", title: command, onclick: () => insertCommandLine(command) }, [label])
+      )
+    );
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Identity"]),
+        el("div", { class: "pas-form-row" }, [
+          el("label", {}, ["Function path"]),
+          pathInput,
+          el("div", { class: "pas-form-hint" }, ["Saved as functions/<path>.mcfunction in the behavior pack. Run in-game with /function <path>."]),
+        ]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Commands"]),
+        el("div", { class: "pas-form-row" }, [
+          el("label", {}, ["One command per line"]),
+          commandsInput,
+          el("div", { class: "pas-form-hint" }, ["No leading \"/\" needed (it's stripped automatically if you type one out of habit). Lines starting with # are comments."]),
+        ]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Quick insert"]), commandChips]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Options"]),
+        el("div", { class: "pas-form-check" }, [
+          el("div", { class: "pas-component-label" }, [
+            el("label", {}, ["Run automatically every game tick"]),
+            el("div", { class: "pas-form-hint" }, ["Adds this function to functions/tick.json instead of only running it via /function or a command block."]),
+          ]),
+          runEveryTickCheck,
+        ]),
+      ]),
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              submitFunctionAdder({
+                rawPath: pathInput.value,
+                lines: commandsInput.value.split("\n"),
+                runEveryTick: runEveryTickCheck.checked,
+              });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Add Function"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+    setTimeout(() => pathInput.focus(), 60);
+  }
+
+  // Writes the new .mcfunction file (and, if requested, registers it in
+  // functions/tick.json) into whatever add-on project is currently in the
+  // explorer -- creating a brand new BP/RP pair first if the explorer is
+  // completely empty, same as every other adder (see ensureAddonScaffold
+  // in app/mcContentBuilders.js). Functions are behavior-pack-only (pure
+  // server-side command execution, no visual/resource-pack side at all),
+  // so this never touches rpRoot.
+  function submitFunctionAdder(fields) {
+    const functionPath = ContentBuilders.slugifyFunctionPath(fields.rawPath);
+    if (!functionPath) throw new Error("Function path can't be empty, e.g. combat/heal.");
+
+    const { bpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+
+    const content = ContentBuilders.buildFunctionFileContent(fields.lines);
+    const functionsFolder = joinPath(bpRoot, "functions");
+    const desiredPath = joinPath(functionsFolder, `${functionPath}.mcfunction`);
+    // createFile() already picks a unique "name (1).mcfunction" style path
+    // on its own if `desiredPath` is taken (see VFS.uniquePath in
+    // app/fs.js) -- so this never silently clobbers an existing function
+    // with the same path.
+    const functionNode = vfs.createFile(desiredPath, content, { isText: true });
+
+    if (fields.runEveryTick) {
+      const tickPath = joinPath(functionsFolder, "tick.json");
+      const existing = vfs.get(tickPath);
+      // The path registered in tick.json must match the function's ACTUAL
+      // final path (functionNode.path), not necessarily the one just
+      // requested -- if createFile() above had to uniquify it (a function
+      // with that path already existed), tick.json needs to point at the
+      // real file that now exists on disk, not a path with nothing there.
+      // Deriving it by stripping the known "<functionsFolder>/" prefix and
+      // ".mcfunction" suffix off the node's own real path is simpler and
+      // less error-prone than trying to recompute it by hand.
+      const actualFunctionPath = functionNode.path.slice(functionsFolder.length + 1).replace(/\.mcfunction$/, "");
+      const merged = ContentBuilders.mergeTickJson(existing ? existing.content : null, actualFunctionPath);
+      if (existing) {
+        vfs.setContent(tickPath, merged);
+        if (editorManager.hasState(tickPath)) editorManager.setContent(tickPath, merged);
+      } else {
+        vfs.createFile(tickPath, merged, { isText: true });
+      }
+    }
+
+
+    closeContentPanel();
+    openFile(functionNode.path);
+    toast(createdNew ? `Created ${projectName}_BP/_RP and added "${functionPath}".` : `Added function "${functionPath}".`);
   }
 
   // ---- Sound / Music adder --------------------------------------------

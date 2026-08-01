@@ -1515,6 +1515,110 @@ function mergeMusicDefinitionsJson(existingContent, triggerName, eventName, minD
   return JSON.stringify(obj, null, 4) + "\n";
 }
 
+// ---------------------------------------------------------------------------
+// Function (.mcfunction) builder -- see
+// https://minecraft.wiki/w/Function_(Bedrock_Edition). Unlike every other
+// content type this app adds, a Bedrock function has no JSON identifier at
+// all: it's a plain-text file of one command per line (no leading "/"),
+// referenced purely by its file PATH relative to BP/functions/ (with the
+// ".mcfunction" extension dropped), e.g. a file at
+// BP/functions/combat/heal.mcfunction is run as `/function combat/heal`.
+// So "identifier" handling here is just a filesystem-safe relative path,
+// not a namespace:name pair -- deliberately NOT reusing
+// normalizeNamespacedIdentifier for that reason.
+// ---------------------------------------------------------------------------
+
+// Turns free-typed text into a safe relative function path: lowercase,
+// spaces/backslashes become "/", each path segment is slugified
+// individually (same per-segment approach as slugifyEventName, so
+// "Combat/Heal Player!" -> "combat/heal_player" keeps its folder
+// structure instead of collapsing into one run), leading/trailing/
+// duplicate slashes trimmed. Never returns a leading "/" (functions are
+// always relative to BP/functions/, there's no "root" to escape to above
+// that).
+function slugifyFunctionPath(raw) {
+  const trimmed = (raw || "").trim().replace(/\\/g, "/");
+  return trimmed
+    .split("/")
+    .map((segment) => slugifyIdToken(segment))
+    .filter(Boolean)
+    .join("/");
+}
+
+// Builds the actual .mcfunction file content: one command per line, each
+// with any leading "/" stripped (Bedrock functions never use the slash --
+// see the wiki page above), blank lines and "#comment" lines passed
+// through untouched. Ends with a single trailing newline (same convention
+// as every other builder in this file).
+function buildFunctionFileContent(lines) {
+  const cleaned = (lines || []).map((rawLine) => {
+    const line = rawLine.replace(/\s+$/, "");
+    const trimmedStart = line.replace(/^\s*/, "");
+    if (trimmedStart.startsWith("#") || !trimmedStart.startsWith("/")) return line;
+    // Strip exactly one leading "/" (right after any indentation), never
+    // touching the rest of the line -- Bedrock functions never use the
+    // slash prefix real chat commands use, but people habitually type it
+    // out of muscle memory.
+    const indentLen = line.length - trimmedStart.length;
+    return line.slice(0, indentLen) + trimmedStart.slice(1);
+  });
+  const text = cleaned.join("\n").replace(/\n+$/, "");
+  return text ? `${text}\n` : "";
+}
+
+// Merges a function path into BP/functions/tick.json's `values` array (the
+// one and only function tag file Bedrock actually supports -- there is no
+// load.json/other tags/functions folder like Java's data packs, per
+// https://minecraft.wiki/w/Function_(Bedrock_Edition)#tick.json). Values
+// here are bare function paths -- no namespace, no ".mcfunction"
+// extension, matching every official/community example (e.g. {"values":
+// ["combat/heal"]}, not {"values": ["mypack:combat/heal"]}). Same "never
+// destroy existing content on a parse failure" fallback and
+// skip-exact-duplicates behavior as mergeSplashesJson.
+function mergeTickJson(existingContent, functionPath) {
+  let obj = null;
+  if (existingContent) {
+    try {
+      const parsed = JSON.parse(existingContent);
+      if (parsed && typeof parsed === "object") obj = parsed;
+    } catch (e) {
+      obj = null;
+    }
+  }
+  if (!obj) obj = { values: [] };
+  if (!Array.isArray(obj.values)) obj.values = [];
+  if (!obj.values.includes(functionPath)) obj.values.push(functionPath);
+  return JSON.stringify(obj, null, 4) + "\n";
+}
+
+// A small library of common command snippets shown as tappable chips in
+// the Function adder, since typing full Bedrock command syntax from
+// scratch on a phone keyboard is slow and error-prone. Each inserts its
+// `command` at the textarea's current cursor position, same interaction
+// as the Splash adder's "\u00A7 formatting code" chips. Deliberately a
+// short, curated list of the most commonly used commands in hand-written
+// functions rather than the full command reference (100+ commands) --
+// covers the overwhelming majority of "give me a starting point" cases
+// without turning this into an unusable wall of buttons on a small screen.
+const FUNCTION_COMMAND_SNIPPETS = [
+  ["say Hello!", "say"],
+  ["tell @p Hello!", "tell"],
+  ["give @p minecraft:apple 1", "give"],
+  ["effect @p speed 10 1", "effect"],
+  ["summon minecraft:cow ~ ~ ~", "summon"],
+  ["execute as @a at @s run say Hi", "execute as/at"],
+  ["execute if entity @p run say Found a player", "execute if entity"],
+  ["fill ~-1 ~-1 ~-1 ~1 ~1 ~1 minecraft:air", "fill"],
+  ["setblock ~ ~ ~ minecraft:stone", "setblock"],
+  ["playsound random.orb @p", "playsound"],
+  ["particle minecraft:heart ~ ~1 ~", "particle"],
+  ["scoreboard objectives add my_objective dummy", "scoreboard add"],
+  ["scoreboard players set @p my_objective 1", "scoreboard set"],
+  ["tag @p add my_tag", "tag add"],
+  ["title @p title Hello!", "title"],
+  ["function another_function", "function"],
+];
+
 window.ContentBuilders = {
   allFolderPaths,
   detectPackTypeFromManifestContent,
@@ -1534,6 +1638,10 @@ window.ContentBuilders = {
   buildEntityBehaviorJSON,
   buildEntityClientJSON,
   buildLootTableJSON,
+  slugifyFunctionPath,
+  buildFunctionFileContent,
+  mergeTickJson,
+  FUNCTION_COMMAND_SNIPPETS,
   ITEM_COMPONENT_SCHEMA,
   BLOCK_COMPONENT_SCHEMA,
   ENTITY_COMPONENT_SCHEMA,
