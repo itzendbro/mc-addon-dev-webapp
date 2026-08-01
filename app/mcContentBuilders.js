@@ -941,6 +941,18 @@ function buildBlockFileJSON(fields) {
   const textureName = fields.blockTexture || "custom:missing";
   components["minecraft:material_instances"] = { "*": { texture: textureName, render_method: fields.renderMethod || "opaque" } };
   if (fields.geometry) components["minecraft:geometry"] = fields.geometry;
+  // A plain top-level "Display name" field (mirroring the Item adder) is
+  // backed by the standard "tile.<id>.name" lang key convention (see
+  // langKeyForBlock() below) rather than a literal raw string -- unlike
+  // items, minecraft:display_name's block-side docs don't mention a raw
+  // string ever displaying correctly, so this always writes a real lang
+  // key + relies on the caller (submitBlockAdder in app/main.js) writing
+  // the matching en_US.lang line alongside it. The advanced
+  // "displayNameEnabled" schema entry below (for anyone who wants to
+  // manually type a custom lang key) intentionally overrides this if also
+  // enabled, since the component loop runs after this and simply
+  // reassigns the same components["minecraft:display_name"] key.
+  if (fields.displayName) components["minecraft:display_name"] = langKeyForBlock(fields.identifier);
 
   const chosen = fields.components || {};
   for (const entry of BLOCK_COMPONENT_SCHEMA) {
@@ -1858,6 +1870,374 @@ const FUNCTION_COMMAND_SNIPPETS = [
   ["function another_function", "function"],
 ];
 
+// ---------------------------------------------------------------------------
+// Recipe builder -- see https://minecraft.wiki/w/Recipe_(Bedrock_Edition).
+// Recipes live in BP/recipes/<name>.json. This app supports the two most
+// commonly hand-authored shapes: a shapeless crafting-table recipe (a flat
+// list of ingredient items, order doesn't matter) and a furnace-family
+// recipe (smelting/blast furnace/smoker/campfire/soul campfire, a single
+// input -> single output). recipe_shaped (grid-position-sensitive) and the
+// more exotic types (brewing, smithing, stonecutter, material reduction)
+// are deliberately left out -- they either need a full 3x3 grid-position
+// editor (shaped) or are rarely hand-authored by add-on creators outside
+// of vanilla-recipe overrides, so they're not worth the UI complexity here.
+// ---------------------------------------------------------------------------
+
+// `ingredients` is an array of { item, count }. Produces a complete,
+// standalone minecraft:recipe_shapeless JSON file. `tag` is one of
+// "crafting_table" or "stonecutter" (stonecutter recipes are also
+// expressed as recipe_shapeless per the wiki).
+function buildShapelessRecipeJSON(fields) {
+  const ingredients = (fields.ingredients || [])
+    .filter((i) => i.item && i.item.trim())
+    .map((i) => {
+      const entry = { item: i.item.trim() };
+      const count = clampInt(i.count, 1, 1, 64);
+      if (count !== 1) entry.count = count;
+      return entry;
+    });
+  if (!ingredients.length) throw new Error("Add at least one ingredient.");
+  const result = { item: fields.resultItem.trim() };
+  const resultCount = clampInt(fields.resultCount, 1, 1, 64);
+  if (resultCount !== 1) result.count = resultCount;
+
+  const root = {
+    format_version: "1.20.10",
+    "minecraft:recipe_shapeless": {
+      description: { identifier: fields.identifier },
+      tags: [fields.tag || "crafting_table"],
+      ingredients,
+      result,
+    },
+  };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// `fields.tag` is one of "furnace"/"blast_furnace"/"smoker"/"campfire"/
+// "soul_campfire" -- each produces a standalone minecraft:recipe_furnace
+// JSON file with a single input item and single output item (no counts on
+// either side -- Bedrock's furnace recipes don't support multi-item output,
+// per the wiki).
+function buildFurnaceRecipeJSON(fields) {
+  if (!fields.inputItem || !fields.inputItem.trim()) throw new Error("Pick an input item to smelt.");
+  if (!fields.outputItem || !fields.outputItem.trim()) throw new Error("Pick the smelted result item.");
+  const root = {
+    format_version: "1.20.10",
+    "minecraft:recipe_furnace": {
+      description: { identifier: fields.identifier },
+      tags: [fields.tag || "furnace"],
+      input: { item: fields.inputItem.trim() },
+      output: fields.outputItem.trim(),
+    },
+  };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Spawn Rule builder -- see https://wiki.bedrock.dev/entities/spawn-rules
+// and https://learn.microsoft.com/minecraft/creator/documents/spawning/
+// entityspawningdeepdive. A spawn rule file (BP/spawn_rules/<name>.json)
+// lets a custom entity spawn naturally in the world -- without one, the
+// only ways to get the entity into a world are /summon or a spawn egg.
+// Deliberately supports only a single top-level `conditions` entry (the
+// overwhelming majority of hand-authored spawn rules only need one) rather
+// than the full multi-condition-array + biome_filter boolean-tree grammar
+// vanilla mobs sometimes use.
+// ---------------------------------------------------------------------------
+function buildSpawnRulesJSON(fields) {
+  const condition = {};
+  if (fields.spawnLocation === "surface") condition["minecraft:spawns_on_surface"] = {};
+  else if (fields.spawnLocation === "underground") condition["minecraft:spawns_underground"] = {};
+  else if (fields.spawnLocation === "underwater") condition["minecraft:spawns_underwater"] = {};
+
+  if (fields.brightnessEnabled) {
+    condition["minecraft:brightness_filter"] = {
+      min: clampInt(fields.brightnessMin, 0, 0, 15),
+      max: clampInt(fields.brightnessMax, 15, 0, 15),
+      adjust_for_weather: !!fields.brightnessAdjustForWeather,
+    };
+  }
+  if (fields.difficultyEnabled) {
+    condition["minecraft:difficulty_filter"] = { min: fields.difficultyMin || "easy", max: fields.difficultyMax || "hard" };
+  }
+  condition["minecraft:weight"] = { default: clampInt(fields.weight, 10, 0) };
+  if (fields.herdEnabled) {
+    condition["minecraft:herd"] = {
+      min_size: clampInt(fields.herdMin, 1, 1),
+      max_size: clampInt(fields.herdMax, 1, 1),
+    };
+  }
+  if (fields.biomeTag && fields.biomeTag.trim()) {
+    condition["minecraft:biome_filter"] = { test: "has_biome_tag", operator: "==", value: fields.biomeTag.trim() };
+  }
+
+  const root = {
+    format_version: "1.8.0",
+    "minecraft:spawn_rules": {
+      description: {
+        identifier: fields.identifier,
+        population_control: fields.populationControl || "animal",
+      },
+      conditions: [condition],
+    },
+  };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Particle builder -- see
+// https://learn.microsoft.com/minecraft/creator/reference/content/
+// particlesreference/particlesintroduction and bedrock.dev/docs/stable/
+// Particles. Particle effects are stored in RP/particles/<name>.json.
+// Deliberately supports only one common, well-tested shape (an
+// instant-burst OR steady-stream point/sphere emitter with a billboard
+// appearance and optional gravity+color tint) rather than the full
+// component grammar (curves, events, flipbooks, entity-bound emitters,
+// collision) -- covers the overwhelming majority of "a puff of X colored
+// particles" use cases well enough to see something in-game immediately,
+// with the file still fully hand-editable afterwards for anything fancier.
+// ---------------------------------------------------------------------------
+function buildParticleFileJSON(fields) {
+  const components = {};
+
+  if (fields.emitterMode === "steady") {
+    components["minecraft:emitter_rate_steady"] = {
+      spawn_rate: numberOr(fields.spawnRate, 10),
+      max_particles: clampInt(fields.maxParticles, 50, 1),
+    };
+    components["minecraft:emitter_lifetime_looping"] = { active_time: numberOr(fields.activeTime, 10) };
+  } else {
+    components["minecraft:emitter_rate_instant"] = { num_particles: clampInt(fields.numParticles, 20, 1) };
+    components["minecraft:emitter_lifetime_once"] = { active_time: numberOr(fields.activeTime, 1) };
+  }
+
+  if (fields.emitterShape === "sphere") {
+    components["minecraft:emitter_shape_sphere"] = { radius: numberOr(fields.shapeRadius, 0.5), direction: "outwards" };
+  } else {
+    components["minecraft:emitter_shape_point"] = { offset: [0, 0, 0], direction: [0, 1, 0] };
+  }
+
+  components["minecraft:particle_initial_speed"] = numberOr(fields.initialSpeed, 0.5);
+  components["minecraft:particle_lifetime_expression"] = { max_lifetime: numberOr(fields.particleLifetime, 1) };
+  if (fields.gravityEnabled) {
+    components["minecraft:particle_motion_dynamic"] = { linear_acceleration: [0, -numberOr(fields.gravityStrength, 1), 0] };
+  }
+  components["minecraft:particle_appearance_billboard"] = {
+    size: [numberOr(fields.particleSize, 0.1), numberOr(fields.particleSize, 0.1)],
+    facing_camera_mode: "lookat_xyz",
+    uv: { texture_width: fields.textureWidth ? clampInt(fields.textureWidth, 8, 1) : 8, texture_height: fields.textureHeight ? clampInt(fields.textureHeight, 8, 1) : 8, uv: [0, 0], uv_size: [fields.textureWidth ? clampInt(fields.textureWidth, 8, 1) : 8, fields.textureHeight ? clampInt(fields.textureHeight, 8, 1) : 8] },
+  };
+  if (fields.tintColor) {
+    const rgb = hexToRgb01(fields.tintColor);
+    if (rgb) components["minecraft:particle_appearance_tinting"] = { color: [rgb.r, rgb.g, rgb.b, 1.0] };
+  }
+  components["minecraft:particle_appearance_lighting"] = {};
+
+  const root = {
+    format_version: "1.10.0",
+    particle_effect: {
+      description: {
+        identifier: fields.identifier,
+        basic_render_parameters: {
+          material: fields.material || "particles_alpha",
+          texture: fields.texturePath || "textures/particle/particles",
+        },
+      },
+      components,
+    },
+  };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// "#rrggbb" -> { r, g, b } each in the 0-1 range particle tinting expects.
+// Returns null for anything that doesn't parse as a 6-digit hex color.
+function hexToRgb01(hex) {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec((hex || "").trim());
+  if (!m) return null;
+  const int = parseInt(m[1], 16);
+  return { r: ((int >> 16) & 255) / 255, g: ((int >> 8) & 255) / 255, b: (int & 255) / 255 };
+}
+
+// ---------------------------------------------------------------------------
+// NPC Dialogue builder -- see
+// https://learn.microsoft.com/minecraft/creator/documents/npcdialogue and
+// https://wiki.bedrock.dev/entities/npc-dialogue. Dialogue "scenes" live in
+// BP/dialogue/<name>.json, each keyed by a unique `scene_tag` used to
+// open/change it in-game via `/dialogue open <npc> <player> <scene_tag>`.
+// A file can hold multiple scenes -- this builder always writes exactly
+// one, merged into the target file's `scenes` array (see
+// mergeNpcDialogueJson below) so multiple dialogue adders can share one
+// file without clobbering each other.
+// ---------------------------------------------------------------------------
+function buildNpcDialogueScene(fields) {
+  if (!fields.sceneTag || !fields.sceneTag.trim()) throw new Error("Scene tag can't be empty.");
+  const scene = { scene_tag: slugifyIdToken(fields.sceneTag) || fields.sceneTag.trim() };
+  if (fields.npcName && fields.npcName.trim()) scene.npc_name = fields.npcName.trim();
+  if (fields.text && fields.text.trim()) scene.text = fields.text.trim();
+  const onOpen = (fields.onOpenCommands || []).map((c) => c.trim()).filter(Boolean);
+  if (onOpen.length) scene.on_open_commands = onOpen;
+  const onClose = (fields.onCloseCommands || []).map((c) => c.trim()).filter(Boolean);
+  if (onClose.length) scene.on_close_commands = onClose;
+  const buttons = (fields.buttons || [])
+    .filter((b) => b.name && b.name.trim())
+    .map((b) => ({
+      name: b.name.trim(),
+      commands: (b.commands || "").split("\n").map((c) => c.trim()).filter(Boolean),
+    }))
+    .filter((b) => b.commands.length);
+  if (buttons.length) scene.buttons = buttons;
+  return scene;
+}
+
+// Merges a new scene into an existing dialogue file's `scenes` array (or
+// starts a fresh one) -- same "never destroy existing content on a parse
+// failure" fallback used by every other merge* helper in this file. If a
+// scene with the same scene_tag already exists it's replaced (re-adding a
+// dialogue with the same tag is far more likely to mean "I'm editing this
+// one" than "I want two scenes silently fighting for the same tag" -- a
+// duplicate scene_tag is not even a well-defined situation in Bedrock).
+function mergeNpcDialogueJson(existingContent, scene) {
+  let obj = null;
+  if (existingContent) {
+    try {
+      const parsed = JSON.parse(existingContent);
+      if (parsed && typeof parsed === "object") obj = parsed;
+    } catch (e) {
+      obj = null;
+    }
+  }
+  if (!obj) obj = { format_version: "1.17.0", "minecraft:npc_dialogue": { scenes: [] } };
+  if (!obj["minecraft:npc_dialogue"] || typeof obj["minecraft:npc_dialogue"] !== "object") {
+    obj["minecraft:npc_dialogue"] = { scenes: [] };
+  }
+  const scenes = obj["minecraft:npc_dialogue"].scenes;
+  const list = Array.isArray(scenes) ? scenes : [];
+  const idx = list.findIndex((s) => s && s.scene_tag === scene.scene_tag);
+  if (idx !== -1) list[idx] = scene;
+  else list.push(scene);
+  obj["minecraft:npc_dialogue"].scenes = list;
+  return JSON.stringify(obj, null, 4) + "\n";
+}
+
+// ---------------------------------------------------------------------------
+// Language (.lang) helpers -- see
+// https://learn.microsoft.com/minecraft/creator/documents/comprehensivepackcontents
+// and https://wiki.bedrock.dev entries on translation. Every custom item/
+// block/entity display name Bedrock shows in-game can be backed by a
+// `texts/en_US.lang` (and friends) key -- these helpers both auto-write the
+// "primary" English line whenever an adder creates something with a
+// display name (so it never shows a raw, untranslated key by mistake) and
+// power a small standalone "Language" panel for translating a whole
+// RP/BP's texts/en_US.lang into other languages via a free MyMemory API
+// call (see translateLangLines() in app/main.js, which does the actual
+// fetch() -- this module stays network-free/pure by design).
+// ---------------------------------------------------------------------------
+
+// Every language Bedrock officially ships translations for out of the box
+// (https://wiki.bedrock.dev/text/text-intro) -- used to populate the
+// "Translate into" picker. `code` is the exact `texts/<code>.lang`
+// filename (minus extension); `label` is what's shown in the UI.
+const BEDROCK_LANGUAGES = [
+  ["en_US", "English (US)"],
+  ["en_GB", "English (UK)"],
+  ["de_DE", "German"],
+  ["es_ES", "Spanish (Spain)"],
+  ["es_MX", "Spanish (Mexico)"],
+  ["fr_FR", "French (France)"],
+  ["fr_CA", "French (Canada)"],
+  ["it_IT", "Italian"],
+  ["pt_BR", "Portuguese (Brazil)"],
+  ["pt_PT", "Portuguese (Portugal)"],
+  ["nl_NL", "Dutch"],
+  ["pl_PL", "Polish"],
+  ["ru_RU", "Russian"],
+  ["uk_UA", "Ukrainian"],
+  ["tr_TR", "Turkish"],
+  ["ja_JP", "Japanese"],
+  ["ko_KR", "Korean"],
+  ["zh_CN", "Chinese (Simplified)"],
+  ["zh_TW", "Chinese (Traditional)"],
+  ["id_ID", "Indonesian"],
+  ["hi_IN", "Hindi"],
+  ["bg_BG", "Bulgarian"],
+  ["cs_CZ", "Czech"],
+  ["da_DK", "Danish"],
+  ["el_GR", "Greek"],
+  ["fi_FI", "Finnish"],
+  ["hu_HU", "Hungarian"],
+  ["nb_NO", "Norwegian"],
+  ["sk_SK", "Slovak"],
+  ["sv_SE", "Swedish"],
+];
+
+// Bedrock .lang files are a flat, ordered list of "key=value" lines (plus
+// blank lines and "#comment" lines) -- NOT JSON. Parses into an ordered
+// array of { type: "entry"|"comment"|"blank", key?, value?, raw } so a
+// round-trip (parse -> edit -> stringify) preserves comments/ordering/
+// blank-line spacing exactly, rather than reshuffling a hand-authored file
+// the user might already have comments/grouping in.
+function parseLangFile(text) {
+  const lines = (text || "").split(/\r?\n/);
+  // A trailing empty string from a trailing newline shouldn't become a
+  // fake blank line at the very end -- drop exactly one if present.
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  return lines.map((raw) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return { type: "blank", raw };
+    if (trimmed.startsWith("#")) return { type: "comment", raw };
+    const eq = raw.indexOf("=");
+    if (eq === -1) return { type: "comment", raw };
+    return { type: "entry", key: raw.slice(0, eq), value: raw.slice(eq + 1), raw };
+  });
+}
+
+function stringifyLangFile(entries) {
+  const text = entries
+    .map((e) => (e.type === "entry" ? `${e.key}=${e.value}` : e.raw))
+    .join("\n");
+  return text ? `${text}\n` : "";
+}
+
+// Merges/updates a single "key=value" line into an existing (or brand new)
+// .lang file's text -- adds it at the end if the key doesn't exist yet,
+// updates the value in place (preserving its original position) if it
+// does. Used both by the auto-lang-entry hook (every adder with a display
+// name) and the standalone Language panel's manual key editor.
+function upsertLangKey(existingContent, key, value) {
+  const entries = parseLangFile(existingContent);
+  const idx = entries.findIndex((e) => e.type === "entry" && e.key === key);
+  if (idx !== -1) entries[idx] = { type: "entry", key, value, raw: `${key}=${value}` };
+  else entries.push({ type: "entry", key, value, raw: `${key}=${value}` });
+  return stringifyLangFile(entries);
+}
+
+// Bedrock's own convention for which .lang key backs which content type's
+// hover/inventory name -- see wiki.bedrock.dev's item/block/entity display
+// name pages and the "Retexturing Spawn Eggs" tutorial for the spawn-egg
+// key shape specifically.
+function langKeyForItem(identifier) {
+  return `item.${identifier}`;
+}
+function langKeyForBlock(identifier) {
+  return `tile.${identifier}.name`;
+}
+function langKeyForEntity(identifier) {
+  return `entity.${identifier}.name`;
+}
+function langKeyForSpawnEgg(identifier) {
+  return `item.spawn_egg.entity.${identifier}.name`;
+}
+
+// Builds `texts/languages.json` -- the flat array of language codes (with
+// no extension) a pack's texts folder actually supports. Bedrock silently
+// ignores any .lang file whose code isn't listed here, so writing this
+// alongside every extra .lang file the Language panel creates is required,
+// not optional, for the translation to actually be picked up in-game.
+function buildLanguagesJson(codes) {
+  const unique = Array.from(new Set(["en_US", ...(codes || [])]));
+  return JSON.stringify(unique, null, 2) + "\n";
+}
+
 window.ContentBuilders = {
   allFolderPaths,
   detectPackTypeFromManifestContent,
@@ -1889,6 +2269,22 @@ window.ContentBuilders = {
   ITEM_COMPONENT_SCHEMA,
   BLOCK_COMPONENT_SCHEMA,
   ENTITY_COMPONENT_SCHEMA,
+  buildShapelessRecipeJSON,
+  buildFurnaceRecipeJSON,
+  buildSpawnRulesJSON,
+  buildParticleFileJSON,
+  hexToRgb01,
+  buildNpcDialogueScene,
+  mergeNpcDialogueJson,
+  BEDROCK_LANGUAGES,
+  parseLangFile,
+  stringifyLangFile,
+  upsertLangKey,
+  langKeyForItem,
+  langKeyForBlock,
+  langKeyForEntity,
+  langKeyForSpawnEgg,
+  buildLanguagesJson,
 };
 
 

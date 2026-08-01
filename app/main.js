@@ -637,6 +637,9 @@ function initApp(host) {
     { id: "splash", label: "Splash", icon: "\u{1F4A6}", enabled: true, render: renderSplashAdderForm },
     { id: "function", label: "Function", icon: "\u{1F4DC}", enabled: true, render: renderFunctionAdderForm },
     { id: "trade", label: "Trade", icon: "\u{1F4B0}", enabled: true, render: renderTradeAdderForm },
+    { id: "particle", label: "Particle", icon: "\u2728", enabled: true, render: renderParticleAdderForm },
+    { id: "dialogue", label: "Dialogue", icon: "\u{1F4AC}", enabled: true, render: renderDialogueAdderForm },
+    { id: "language", label: "Language", icon: "\u{1F310}", enabled: true, render: renderLanguageAdderForm },
   ];
 
   function renderContentTypePicker() {
@@ -716,6 +719,175 @@ function initApp(host) {
           out[name] = type === "checkbox" ? input.checked : input.value;
         }
         return out;
+      },
+    };
+  }
+
+  // Generic "Add a crafting recipe" section, reused by both the Item and
+  // Block adders (a recipe's `result` is just whatever item/block is being
+  // created, so the exact same ingredient-row UI/logic works for either).
+  // Returns { sectionEl, readValues() } where readValues() gives back
+  // { enabled, kind: "shapeless"|"furnace", tag, ingredients: [{item,
+  // count}], inputItem } ready to hand to ContentBuilders.
+  // buildShapelessRecipeJSON/buildFurnaceRecipeJSON alongside the
+  // identifier of the thing actually being created (the result).
+  function buildRecipeSection() {
+    const enabledCheck = el("input", { type: "checkbox" });
+    const kindSelect = el("select", { class: "pas-input" }, [
+      el("option", { value: "crafting_table" }, ["Crafting table (shapeless)"]),
+      el("option", { value: "stonecutter" }, ["Stonecutter"]),
+      el("option", { value: "furnace" }, ["Furnace / smelting"]),
+      el("option", { value: "blast_furnace" }, ["Blast furnace"]),
+      el("option", { value: "smoker" }, ["Smoker"]),
+      el("option", { value: "campfire" }, ["Campfire"]),
+    ]);
+    const ingredientRowsEl = el("div", { class: "pas-loot-rows" });
+    const ingredientRows = []; // [{ itemInput, countInput, rowEl }]
+    function addIngredientRow() {
+      const itemInput = el("input", { class: "pas-input", type: "text", placeholder: "minecraft:iron_ingot (ingredient)", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+      const countInput = el("input", { class: "pas-input", type: "number", value: "1", min: "1", max: "64", inputmode: "numeric" });
+      const rowEl = el("div", { class: "pas-loot-row" }, [
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Ingredient item"]), itemInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Count needed"]), countInput]),
+        el("button", {
+          type: "button",
+          class: "pas-loot-row-remove",
+          onclick: () => {
+            const idx = ingredientRows.findIndex((r) => r.rowEl === rowEl);
+            if (idx !== -1) ingredientRows.splice(idx, 1);
+            rowEl.remove();
+          },
+        }, ["Remove ingredient"]),
+      ]);
+      ingredientRows.push({ itemInput, countInput, rowEl });
+      ingredientRowsEl.appendChild(rowEl);
+    }
+    addIngredientRow();
+    const addIngredientBtn = el("button", { type: "button", class: "pas-btn pas-btn-ghost", onclick: addIngredientRow }, ["+ Add another ingredient"]);
+
+    const furnaceInputInput = el("input", { class: "pas-input", type: "text", placeholder: "minecraft:raw_iron", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+
+    const shapelessFields = el("div", { class: "pas-form-subfields is-visible" }, [
+      el("div", { class: "pas-form-hint" }, ["Any order, no grid position -- most hand-authored recipes use this."]),
+      ingredientRowsEl,
+      addIngredientBtn,
+    ]);
+    const furnaceFields = el("div", { class: "pas-form-subfields" }, [
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Item to smelt"]), furnaceInputInput]),
+    ]);
+
+    function syncKindVisibility() {
+      const isFurnace = ["furnace", "blast_furnace", "smoker", "campfire"].includes(kindSelect.value);
+      shapelessFields.classList.toggle("is-visible", !isFurnace);
+      furnaceFields.classList.toggle("is-visible", isFurnace);
+    }
+    kindSelect.addEventListener("change", syncKindVisibility);
+    syncKindVisibility();
+
+    const fieldsEl = el("div", { class: "pas-form-subfields" }, [
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Recipe type"]), kindSelect]),
+      shapelessFields,
+      furnaceFields,
+    ]);
+    enabledCheck.addEventListener("change", () => fieldsEl.classList.toggle("is-visible", enabledCheck.checked));
+
+    const sectionEl = el("div", { class: "pas-form-section" }, [
+      el("h3", { class: "pas-form-section-title" }, ["Crafting Recipe"]),
+      el("div", { class: "pas-form-check" }, [
+        el("div", { class: "pas-component-label" }, [
+          el("label", {}, ["Add a crafting recipe"]),
+          el("div", { class: "pas-form-hint" }, ["Lets players craft this instead of (or in addition to) getting it via /give or loot."]),
+        ]),
+        enabledCheck,
+      ]),
+      fieldsEl,
+    ]);
+
+    return {
+      sectionEl,
+      readValues() {
+        const isFurnace = ["furnace", "blast_furnace", "smoker", "campfire"].includes(kindSelect.value);
+        return {
+          enabled: enabledCheck.checked,
+          kind: isFurnace ? "furnace" : "shapeless",
+          tag: kindSelect.value,
+          ingredients: ingredientRows.map((r) => ({ item: r.itemInput.value.trim(), count: r.countInput.value })),
+          inputItem: furnaceInputInput.value.trim(),
+        };
+      },
+    };
+  }
+
+  // "Let this entity spawn naturally" section, used only by the Entity
+  // adder -- builds a BP/spawn_rules/<name>.json (see
+  // ContentBuilders.buildSpawnRulesJSON) so the entity can appear on its
+  // own in survival worlds instead of only via /summon or its spawn egg.
+  // Returns { sectionEl, readValues() }.
+  function buildSpawnRuleSection() {
+    const enabledCheck = el("input", { type: "checkbox" });
+    const populationSelect = el("select", { class: "pas-input" }, [
+      el("option", { value: "animal" }, ["Animal (passive)"]),
+      el("option", { value: "monster" }, ["Monster (hostile)"]),
+      el("option", { value: "ambient" }, ["Ambient (bats, etc)"]),
+      el("option", { value: "underwater_animal" }, ["Underwater animal"]),
+    ]);
+    const locationSelect = el("select", { class: "pas-input" }, [
+      el("option", { value: "surface" }, ["On the surface"]),
+      el("option", { value: "underground" }, ["Underground"]),
+      el("option", { value: "underwater" }, ["Underwater"]),
+    ]);
+    const weightInput = el("input", { class: "pas-input", type: "number", value: "10", min: "0", inputmode: "numeric" });
+    const biomeTagInput = el("input", { class: "pas-input", type: "text", placeholder: "forest (leave blank for any biome)", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const herdMinInput = el("input", { class: "pas-input", type: "number", value: "1", min: "1", inputmode: "numeric" });
+    const herdMaxInput = el("input", { class: "pas-input", type: "number", value: "2", min: "1", inputmode: "numeric" });
+    const brightnessMinInput = el("input", { class: "pas-input", type: "number", value: "0", min: "0", max: "15", inputmode: "numeric" });
+    const brightnessMaxInput = el("input", { class: "pas-input", type: "number", value: "15", min: "0", max: "15", inputmode: "numeric" });
+
+    const fieldsEl = el("div", { class: "pas-form-subfields" }, [
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Spawn category"]), populationSelect]),
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Where it spawns"]), locationSelect]),
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Weight (higher = more common)"]), weightInput]),
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Biome tag filter"]), biomeTagInput]),
+      el("div", { class: "pas-form-two-col" }, [
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Herd min size"]), herdMinInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Herd max size"]), herdMaxInput]),
+      ]),
+      el("div", { class: "pas-form-two-col" }, [
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Min light level"]), brightnessMinInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Max light level"]), brightnessMaxInput]),
+      ]),
+    ]);
+    enabledCheck.addEventListener("change", () => fieldsEl.classList.toggle("is-visible", enabledCheck.checked));
+
+    const sectionEl = el("div", { class: "pas-form-section" }, [
+      el("h3", { class: "pas-form-section-title" }, ["Spawn Rule"]),
+      el("div", { class: "pas-form-check" }, [
+        el("div", { class: "pas-component-label" }, [
+          el("label", {}, ["Let this entity spawn naturally"]),
+          el("div", { class: "pas-form-hint" }, ["Without this, the entity only appears via /summon or its spawn egg."]),
+        ]),
+        enabledCheck,
+      ]),
+      fieldsEl,
+    ]);
+
+    return {
+      sectionEl,
+      readValues() {
+        return {
+          enabled: enabledCheck.checked,
+          populationControl: populationSelect.value,
+          spawnLocation: locationSelect.value,
+          weight: weightInput.value,
+          biomeTag: biomeTagInput.value,
+          herdEnabled: true,
+          herdMin: herdMinInput.value,
+          herdMax: herdMaxInput.value,
+          brightnessEnabled: true,
+          brightnessMin: brightnessMinInput.value,
+          brightnessMax: brightnessMaxInput.value,
+          brightnessAdjustForWeather: true,
+        };
       },
     };
   }
@@ -808,6 +980,8 @@ function initApp(host) {
       ]);
     });
 
+    const recipeSection = buildRecipeSection();
+
     const errorEl = el("div", { class: "pas-field-error" });
 
     const body = el("div", { class: "pas-content-panel-body" }, [
@@ -836,6 +1010,7 @@ function initApp(host) {
         el("div", { class: "pas-form-hint", style: "margin-bottom:10px" }, ["Every official Bedrock item component -- tap a switch to reveal its options."]),
         ...componentRows,
       ]),
+      recipeSection.sectionEl,
       errorEl,
       el("div", { class: "pas-form-submit-row" }, [
         el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
@@ -856,6 +1031,7 @@ function initApp(host) {
                 category: categorySelect.value,
                 maxStackSize: stackInput.value,
                 components,
+                recipe: recipeSection.readValues(),
               });
             } catch (err) {
               errorEl.textContent = err.message || String(err);
@@ -906,12 +1082,88 @@ function initApp(host) {
       }
     }
 
+    // Auto-add a en_US.lang entry for the display name -- buildItemFileJSON
+    // already writes minecraft:display_name as a literal string (so the
+    // item shows correctly with zero extra files), but ALSO backing it
+    // with a proper "item.<id>=Name" lang line means the name still shows
+    // up right if the raw-string component is ever swapped for a loc-key
+    // one by hand later, and gives translators (see the Language panel) a
+    // real key to translate from day one.
+    if (rpRoot && fields.displayName) {
+      writeAutoLangEntry(rpRoot, ContentBuilders.langKeyForItem(identifier), fields.displayName);
+    }
+
+    // Optional crafting recipe -- writes into BP/recipes/, see
+    // submitRecipeSection() below (shared with the Block adder).
+    submitRecipeSection(bpRoot, identifier, fields.recipe);
+
     // vfs.createFile() above already triggered a tree re-render via
     // vfs.onChange -- openFile() below covers tabs/main-area/explorer
     // (again, cheaply) for the newly created file becoming active.
     closeContentPanel();
     openFile(itemNode.path);
     toast(createdNew ? `Created ${projectName}_BP/_RP and added "${identifier}".` : `Added item "${identifier}".`);
+  }
+
+  // Writes the optional recipe section (see buildRecipeSection() above)
+  // into BP/recipes/<shortname>.json -- shared by submitItemAdder and
+  // submitBlockAdder since a recipe's shape doesn't care whether its
+  // result is an item or a block. No-ops entirely if the section wasn't
+  // enabled or ended up with nothing usable typed into it (never throws --
+  // a broken/empty recipe just silently doesn't get written, since the
+  // main item/block itself has already been created successfully by the
+  // time this runs and that success shouldn't be undone by an incidental
+  // recipe mistake).
+  function submitRecipeSection(bpRoot, resultIdentifier, recipe) {
+    if (!recipe || !recipe.enabled) return;
+    const shortName = resultIdentifier.split(":")[1];
+    try {
+      let json;
+      if (recipe.kind === "furnace") {
+        json = ContentBuilders.buildFurnaceRecipeJSON({
+          identifier: resultIdentifier,
+          tag: recipe.tag,
+          inputItem: recipe.inputItem,
+          outputItem: resultIdentifier,
+        });
+      } else {
+        json = ContentBuilders.buildShapelessRecipeJSON({
+          identifier: resultIdentifier,
+          tag: recipe.tag,
+          ingredients: recipe.ingredients,
+          resultItem: resultIdentifier,
+          resultCount: 1,
+        });
+      }
+      const recipePath = joinPath(bpRoot, "recipes", `${shortName}.json`);
+      vfs.createFile(recipePath, json, { isText: true });
+    } catch (err) {
+      // Deliberately swallowed -- see the comment on this function for why
+      // a recipe-only mistake shouldn't block/undo the main content adder.
+      console.warn("Recipe not added:", err.message || err);
+      toast(`Item/block added, but the recipe wasn't: ${err.message || err}`, { type: "error" });
+    }
+  }
+
+  // Writes/updates a single "key=value" line in <rpRoot>/texts/en_US.lang
+  // (creating the file, and registering "en_US" in texts/languages.json,
+  // the first time it's needed) -- shared by every adder that wants to
+  // back a display name with a real lang key (Item/Block/Entity spawn
+  // egg). Best-effort: only ever called when rpRoot is known.
+  function writeAutoLangEntry(rpRoot, key, value) {
+    const langPath = joinPath(rpRoot, "texts", "en_US.lang");
+    const existing = vfs.get(langPath);
+    const merged = ContentBuilders.upsertLangKey(existing ? existing.content : null, key, value);
+    if (existing) {
+      vfs.setContent(langPath, merged);
+      if (editorManager.hasState(langPath)) editorManager.setContent(langPath, merged);
+    } else {
+      vfs.createFile(langPath, merged, { isText: true });
+    }
+    const languagesPath = joinPath(rpRoot, "texts", "languages.json");
+    if (!vfs.get(languagesPath)) {
+      vfs.createFile(languagesPath, ContentBuilders.buildLanguagesJson([]), { isText: true });
+    }
   }
 
   // ---- Block adder ---------------------------------------------------
@@ -934,6 +1186,7 @@ function initApp(host) {
     );
 
     const idInput = el("input", { class: "pas-input", type: "text", placeholder: "custom:magic_block", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const nameInput = el("input", { class: "pas-input", type: "text", placeholder: "Magic Block", autocomplete: "off" });
     const categorySelect = el("select", { class: "pas-input" }, [
       el("option", { value: "construction" }, ["Construction"]),
       el("option", { value: "nature" }, ["Nature"]),
@@ -1004,6 +1257,8 @@ function initApp(host) {
       ]);
     });
 
+    const recipeSection = buildRecipeSection();
+
     const errorEl = el("div", { class: "pas-field-error" });
 
     const body = el("div", { class: "pas-content-panel-body" }, [
@@ -1013,6 +1268,7 @@ function initApp(host) {
       el("div", { class: "pas-form-section" }, [
         el("h3", { class: "pas-form-section-title" }, ["Identity"]),
         el("div", { class: "pas-form-row" }, [el("label", {}, ["Block ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace."])]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Display name"]), nameInput]),
       ]),
       el("div", { class: "pas-form-section" }, [
         el("h3", { class: "pas-form-section-title" }, ["Appearance"]),
@@ -1034,6 +1290,7 @@ function initApp(host) {
         el("div", { class: "pas-form-hint", style: "margin-bottom:10px" }, ["Every official Bedrock block component -- tap a switch to reveal its options."]),
         ...componentRows,
       ]),
+      recipeSection.sectionEl,
       errorEl,
       el("div", { class: "pas-form-submit-row" }, [
         el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
@@ -1048,11 +1305,13 @@ function initApp(host) {
               }
               submitBlockAdder({
                 rawIdentifier: idInput.value,
+                displayName: nameInput.value.trim(),
                 blockTexture: ContentBuilders.slugifyIdToken(textureInput.value),
                 textureFile: uploadedTextureFile,
                 renderMethod: renderMethodSelect.value,
                 category: categorySelect.value,
                 components,
+                recipe: recipeSection.readValues(),
               });
             } catch (err) {
               errorEl.textContent = err.message || String(err);
@@ -1109,7 +1368,14 @@ function initApp(host) {
         const pngPath = joinPath(rpRoot, "textures", "blocks", `${textureName}.png`);
         vfs.createFile(pngPath, fields.textureFile.bytesB64, { isText: false });
       }
+      if (fields.displayName) {
+        writeAutoLangEntry(rpRoot, ContentBuilders.langKeyForBlock(identifier), fields.displayName);
+      }
     }
+
+    // Optional crafting recipe -- see submitRecipeSection() (shared with
+    // the Item adder) up near submitItemAdder.
+    submitRecipeSection(bpRoot, identifier, fields.recipe);
 
     closeContentPanel();
     openFile(blockNode.path);
@@ -1135,6 +1401,7 @@ function initApp(host) {
     );
 
     const idInput = el("input", { class: "pas-input", type: "text", placeholder: "custom:magic_golem", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const nameInput = el("input", { class: "pas-input", type: "text", placeholder: "Magic Golem", autocomplete: "off" });
 
     // ---- Texture: upload a PNG (preferred) or type a short name --------
     let uploadedTextureFile = null; // { name, bytesB64 } | null
@@ -1234,6 +1501,8 @@ function initApp(host) {
     const lootFields = el("div", { class: "pas-form-subfields" }, [lootRowsEl, addLootRowBtn]);
     lootEnabledCheck.addEventListener("change", () => lootFields.classList.toggle("is-visible", lootEnabledCheck.checked));
 
+    const spawnRuleSection = buildSpawnRuleSection();
+
     const errorEl = el("div", { class: "pas-field-error" });
 
     const body = el("div", { class: "pas-content-panel-body" }, [
@@ -1243,6 +1512,7 @@ function initApp(host) {
       el("div", { class: "pas-form-section" }, [
         el("h3", { class: "pas-form-section-title" }, ["Identity"]),
         el("div", { class: "pas-form-row" }, [el("label", {}, ["Entity ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace."])]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Display name"]), nameInput, el("div", { class: "pas-form-hint" }, ["Also names its spawn egg the same way."])]),
       ]),
       el("div", { class: "pas-form-section" }, [
         el("h3", { class: "pas-form-section-title" }, ["Appearance"]),
@@ -1284,6 +1554,7 @@ function initApp(host) {
         ]),
         lootFields,
       ]),
+      spawnRuleSection.sectionEl,
       errorEl,
       el("div", { class: "pas-form-submit-row" }, [
         el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
@@ -1301,6 +1572,7 @@ function initApp(host) {
                 : [];
               submitEntityAdder({
                 rawIdentifier: idInput.value,
+                displayName: nameInput.value.trim(),
                 textureFile: uploadedTextureFile,
                 geometryId: geometryInput.value.trim(),
                 spawnEggBaseColor: eggBaseColor.value,
@@ -1308,6 +1580,7 @@ function initApp(host) {
                 components,
                 lootEnabled: lootEnabledCheck.checked,
                 drops,
+                spawnRule: spawnRuleSection.readValues(),
               });
             } catch (err) {
               errorEl.textContent = err.message || String(err);
@@ -1370,6 +1643,33 @@ function initApp(host) {
       if (fields.textureFile) {
         const pngPath = joinPath(rpRoot, "textures", "entity", `${shortName}.png`);
         vfs.createFile(pngPath, fields.textureFile.bytesB64, { isText: false });
+      }
+      // Unlike items/blocks, an entity has no minecraft:display_name
+      // component at all -- Bedrock always names a mob purely off its
+      // "entity.<id>.name" lang key (falling back to the raw identifier if
+      // that key is missing), and its auto-generated spawn egg similarly
+      // needs its OWN separate "item.spawn_egg.entity.<id>.name" key (see
+      // langKeyForSpawnEgg()) or it shows as a raw, untranslated string in
+      // the creative inventory.
+      if (fields.displayName) {
+        writeAutoLangEntry(rpRoot, ContentBuilders.langKeyForEntity(identifier), fields.displayName);
+        writeAutoLangEntry(rpRoot, ContentBuilders.langKeyForSpawnEgg(identifier), fields.displayName);
+      }
+    }
+
+    // Optional spawn rule -- lets this entity spawn naturally instead of
+    // only via /summon or its spawn egg. See buildSpawnRuleSection() above
+    // and ContentBuilders.buildSpawnRulesJSON. Best-effort/non-fatal, same
+    // reasoning as submitRecipeSection: the entity itself has already been
+    // created successfully by this point.
+    if (fields.spawnRule && fields.spawnRule.enabled) {
+      try {
+        const spawnRuleJson = ContentBuilders.buildSpawnRulesJSON({ ...fields.spawnRule, identifier });
+        const spawnRulePath = joinPath(bpRoot, "spawn_rules", `${shortName}.json`);
+        vfs.createFile(spawnRulePath, spawnRuleJson, { isText: true });
+      } catch (err) {
+        console.warn("Spawn rule not added:", err.message || err);
+        toast(`Entity added, but the spawn rule wasn't: ${err.message || err}`, { type: "error" });
       }
     }
 
@@ -2167,6 +2467,478 @@ function initApp(host) {
     closeContentPanel();
     openFile(openPath);
     toast(createdNew ? `Created ${projectName}_BP/_RP and added "${eventName}".` : `Added ${fields.kind === "music" ? "music track" : "sound"} "${eventName}".`);
+  }
+
+  // ---- Particle adder ---------------------------------------------------
+  // See https://learn.microsoft.com/minecraft/creator/reference/content/
+  // particlesreference/particlesintroduction and
+  // ContentBuilders.buildParticleFileJSON's own comment for exactly which
+  // subset of the full particle component grammar this covers. Particles
+  // are resource-pack-only (RP/particles/<name>.json) -- referenced by
+  // /particle, entity behavior particle effects, or scripting, never used
+  // on their own from a behavior pack.
+  function renderParticleAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add Particle Effect"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    const idInput = el("input", { class: "pas-input", type: "text", placeholder: "custom:sparkle", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const texturePathInput = el("input", { class: "pas-input", type: "text", placeholder: "textures/particle/particles (default Minecraft particle atlas)", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const materialSelect = el("select", { class: "pas-input" }, [
+      el("option", { value: "particles_alpha" }, ["Alpha (solid pixels, transparent background)"]),
+      el("option", { value: "particles_blend" }, ["Blend (see-through colors)"]),
+      el("option", { value: "particles_add" }, ["Add (glowing/additive)"]),
+    ]);
+    const emitterModeSelect = el("select", { class: "pas-input" }, [
+      el("option", { value: "instant" }, ["Instant burst"]),
+      el("option", { value: "steady" }, ["Steady stream"]),
+    ]);
+    const shapeSelect = el("select", { class: "pas-input" }, [
+      el("option", { value: "point" }, ["Point"]),
+      el("option", { value: "sphere" }, ["Sphere"]),
+    ]);
+    const numParticlesInput = el("input", { class: "pas-input", type: "number", value: "20", min: "1", inputmode: "numeric" });
+    const spawnRateInput = el("input", { class: "pas-input", type: "number", value: "10", min: "0.1", step: "0.1", inputmode: "decimal" });
+    const maxParticlesInput = el("input", { class: "pas-input", type: "number", value: "50", min: "1", inputmode: "numeric" });
+    const activeTimeInput = el("input", { class: "pas-input", type: "number", value: "1", min: "0.1", step: "0.1", inputmode: "decimal" });
+    const shapeRadiusInput = el("input", { class: "pas-input", type: "number", value: "0.5", min: "0", step: "0.1", inputmode: "decimal" });
+    const initialSpeedInput = el("input", { class: "pas-input", type: "number", value: "0.5", step: "0.1", inputmode: "decimal" });
+    const particleLifetimeInput = el("input", { class: "pas-input", type: "number", value: "1", min: "0.1", step: "0.1", inputmode: "decimal" });
+    const particleSizeInput = el("input", { class: "pas-input", type: "number", value: "0.1", min: "0.01", step: "0.01", inputmode: "decimal" });
+    const gravityEnabledCheck = el("input", { type: "checkbox" });
+    const gravityStrengthInput = el("input", { class: "pas-input", type: "number", value: "1", step: "0.1", inputmode: "decimal" });
+    const tintColorInput = el("input", { type: "color", class: "pas-color-input", value: "#ffffff" });
+    const tintEnabledCheck = el("input", { type: "checkbox" });
+
+    const instantFields = el("div", { class: "pas-form-subfields is-visible" }, [
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Particles per burst"]), numParticlesInput]),
+    ]);
+    const steadyFields = el("div", { class: "pas-form-subfields" }, [
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Spawn rate (particles/sec)"]), spawnRateInput]),
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Max particles alive at once"]), maxParticlesInput]),
+    ]);
+    function syncEmitterMode() {
+      const isSteady = emitterModeSelect.value === "steady";
+      instantFields.classList.toggle("is-visible", !isSteady);
+      steadyFields.classList.toggle("is-visible", isSteady);
+    }
+    emitterModeSelect.addEventListener("change", syncEmitterMode);
+    syncEmitterMode();
+
+    const shapeRadiusRow = el("div", { class: "pas-form-row" }, [el("label", {}, ["Sphere radius"]), shapeRadiusInput]);
+    function syncShape() {
+      shapeRadiusRow.style.display = shapeSelect.value === "sphere" ? "" : "none";
+    }
+    shapeSelect.addEventListener("change", syncShape);
+    syncShape();
+
+    const gravityFields = el("div", { class: "pas-form-subfields" }, [
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Fall strength"]), gravityStrengthInput]),
+    ]);
+    gravityEnabledCheck.addEventListener("change", () => gravityFields.classList.toggle("is-visible", gravityEnabledCheck.checked));
+
+    const tintFields = el("div", { class: "pas-form-subfields" }, [
+      el("div", { class: "pas-form-row" }, [el("label", {}, ["Tint color"]), tintColorInput]),
+    ]);
+    tintEnabledCheck.addEventListener("change", () => tintFields.classList.toggle("is-visible", tintEnabledCheck.checked));
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Identity"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Particle ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace."])]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Texture path"]), texturePathInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Material"]), materialSelect]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Emitter"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Emission mode"]), emitterModeSelect]),
+        instantFields,
+        steadyFields,
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Emitter shape"]), shapeSelect]),
+        shapeRadiusRow,
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Emitter active time (seconds)"]), activeTimeInput]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Particle Look"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Initial speed"]), initialSpeedInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Particle lifetime (seconds)"]), particleLifetimeInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Particle size"]), particleSizeInput]),
+        el("div", { class: "pas-form-check" }, [
+          el("div", { class: "pas-component-label" }, [
+            el("label", {}, ["Falls with gravity"]),
+            el("div", { class: "pas-form-hint" }, ["Off = floats/drifts in its initial direction forever."]),
+          ]),
+          gravityEnabledCheck,
+        ]),
+        gravityFields,
+        el("div", { class: "pas-form-check" }, [
+          el("div", { class: "pas-component-label" }, [
+            el("label", {}, ["Tint with a solid color"]),
+            el("div", { class: "pas-form-hint" }, ["Multiplies the texture by this color -- handy for a plain white/gray particle texture."]),
+          ]),
+          tintEnabledCheck,
+        ]),
+        tintFields,
+      ]),
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              submitParticleAdder({
+                rawIdentifier: idInput.value,
+                texturePath: texturePathInput.value.trim(),
+                material: materialSelect.value,
+                emitterMode: emitterModeSelect.value,
+                emitterShape: shapeSelect.value,
+                numParticles: numParticlesInput.value,
+                spawnRate: spawnRateInput.value,
+                maxParticles: maxParticlesInput.value,
+                activeTime: activeTimeInput.value,
+                shapeRadius: shapeRadiusInput.value,
+                initialSpeed: initialSpeedInput.value,
+                particleLifetime: particleLifetimeInput.value,
+                particleSize: particleSizeInput.value,
+                gravityEnabled: gravityEnabledCheck.checked,
+                gravityStrength: gravityStrengthInput.value,
+                tintColor: tintEnabledCheck.checked ? tintColorInput.value : null,
+              });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Add Particle"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+    setTimeout(() => idInput.focus(), 60);
+  }
+
+  // Writes the new particle effect JSON into whatever add-on project is
+  // currently in the explorer -- creating a brand new BP/RP pair first if
+  // the explorer is completely empty, same as every other adder. Particles
+  // are RP-only (no behavior-pack side at all), so this never touches
+  // bpRoot.
+  function submitParticleAdder(fields) {
+    const identifier = ContentBuilders.normalizeNamespacedIdentifier(fields.rawIdentifier, "Particle ID");
+
+    const { rpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+    const targetRoot = rpRoot ?? "";
+
+    const json = ContentBuilders.buildParticleFileJSON({ ...fields, identifier, texturePath: fields.texturePath || undefined });
+    const shortName = identifier.split(":")[1];
+    const desiredPath = joinPath(targetRoot, "particles", `${shortName}.json`);
+    const particleNode = vfs.createFile(desiredPath, json, { isText: true });
+
+    closeContentPanel();
+    openFile(particleNode.path);
+    toast(createdNew ? `Created ${projectName}_BP/_RP and added "${identifier}".` : `Added particle effect "${identifier}".`);
+  }
+
+  // ---- NPC Dialogue adder -------------------------------------------------
+  // See https://learn.microsoft.com/minecraft/creator/documents/npcdialogue
+  // and https://wiki.bedrock.dev/entities/npc-dialogue. A dialogue "scene"
+  // (BP/dialogue/<file>.json) is opened in-game against any entity with
+  // the minecraft:npc component (usually the vanilla NPC, summoned via
+  // /summon npc) using /dialogue open <npc> <player> <scene_tag> -- this
+  // adder only builds the scene file itself, since wiring an NPC entity up
+  // to actually show it is a per-world command-block/function concern
+  // that varies too much to usefully automate here.
+  function renderDialogueAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add NPC Dialogue"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    const fileNameInput = el("input", { class: "pas-input", type: "text", placeholder: "scene (dialogue/scene.json -- share one file for a whole conversation tree)", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const sceneTagInput = el("input", { class: "pas-input", type: "text", placeholder: "greeting", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const npcNameInput = el("input", { class: "pas-input", type: "text", placeholder: "Ducky (blank = use the NPC's own name)", autocomplete: "off" });
+    const textInput = el("textarea", { class: "pas-input pas-textarea", rows: "3", placeholder: "What the NPC says in the speech bubble.", spellcheck: "false" });
+    const onOpenInput = el("textarea", { class: "pas-input pas-textarea", rows: "2", placeholder: "One command per line, runs when the dialogue opens.", autocapitalize: "off", spellcheck: "false" });
+    const onCloseInput = el("textarea", { class: "pas-input pas-textarea", rows: "2", placeholder: "One command per line, runs when the dialogue closes.", autocapitalize: "off", spellcheck: "false" });
+
+    const buttonsRowsEl = el("div", { class: "pas-loot-rows" });
+    const buttonRows = []; // [{ nameInput, commandsInput, rowEl }]
+    function addButtonRow() {
+      const nameInput = el("input", { class: "pas-input", type: "text", placeholder: "Take Gold?", autocomplete: "off" });
+      const commandsInput = el("textarea", { class: "pas-input pas-textarea", rows: "2", placeholder: "One command per line -- runs when this button is tapped.\ngive @initiator minecraft:gold_ingot", autocapitalize: "off", spellcheck: "false" });
+      const rowEl = el("div", { class: "pas-loot-row" }, [
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Button text"]), nameInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Commands"]), commandsInput]),
+        el("button", {
+          type: "button",
+          class: "pas-loot-row-remove",
+          onclick: () => {
+            const idx = buttonRows.findIndex((r) => r.rowEl === rowEl);
+            if (idx !== -1) buttonRows.splice(idx, 1);
+            rowEl.remove();
+          },
+        }, ["Remove button"]),
+      ]);
+      buttonRows.push({ nameInput, commandsInput, rowEl });
+      buttonsRowsEl.appendChild(rowEl);
+    }
+    const addButtonRowBtn = el("button", { type: "button", class: "pas-btn pas-btn-ghost", onclick: addButtonRow }, ["+ Add a button"]);
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Scene"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Dialogue file"]), fileNameInput, el("div", { class: "pas-form-hint" }, ["Saved as dialogue/<file>.json -- reuse the same file name for a multi-scene conversation."])]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Scene tag"]), sceneTagInput, el("div", { class: "pas-form-hint" }, ["Used in /dialogue open ... <scene tag>."])]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["NPC name override"]), npcNameInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Speech text"]), textInput]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Commands"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["On open"]), onOpenInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["On close"]), onCloseInput]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Buttons"]),
+        el("div", { class: "pas-form-hint", style: "margin-bottom:10px" }, ["Optional -- a scene with no buttons just shows the text and closes."]),
+        buttonsRowsEl,
+        addButtonRowBtn,
+      ]),
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              submitDialogueAdder({
+                rawFileName: fileNameInput.value,
+                sceneTag: sceneTagInput.value,
+                npcName: npcNameInput.value.trim(),
+                text: textInput.value,
+                onOpenCommands: onOpenInput.value.split("\n"),
+                onCloseCommands: onCloseInput.value.split("\n"),
+                buttons: buttonRows.map((r) => ({ name: r.nameInput.value, commands: r.commandsInput.value })),
+              });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Add Dialogue"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+    setTimeout(() => sceneTagInput.focus(), 60);
+  }
+
+  // Writes/merges the new dialogue scene into BP/dialogue/<file>.json --
+  // creating a brand new BP/RP pair first if the explorer is completely
+  // empty, same as every other adder. Dialogue is behavior-pack-only.
+  function submitDialogueAdder(fields) {
+    const fileName = ContentBuilders.slugifyIdToken(fields.rawFileName) || "scene";
+    const scene = ContentBuilders.buildNpcDialogueScene(fields);
+
+    const { bpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+    const dialoguePath = joinPath(bpRoot, "dialogue", `${fileName}.json`);
+    const existing = vfs.get(dialoguePath);
+    const merged = ContentBuilders.mergeNpcDialogueJson(existing ? existing.content : null, scene);
+    let dialogueNode;
+    if (existing) {
+      vfs.setContent(dialoguePath, merged);
+      if (editorManager.hasState(dialoguePath)) editorManager.setContent(dialoguePath, merged);
+      dialogueNode = existing;
+    } else {
+      dialogueNode = vfs.createFile(dialoguePath, merged, { isText: true });
+    }
+
+    closeContentPanel();
+    openFile(dialogueNode.path);
+    toast(createdNew ? `Created ${projectName}_BP/_RP and added scene "${scene.scene_tag}".` : `Added scene "${scene.scene_tag}" to dialogue/${fileName}.json.`);
+  }
+
+  // ---- Language adder / translator ---------------------------------------
+  // A standalone panel (not tied to any one item/block/entity) for viewing
+  // and hand-editing an RP's texts/en_US.lang directly, PLUS a "Translate
+  // into..." action that copies every line into a new texts/<lang>.lang
+  // file with each value machine-translated via the free MyMemory API
+  // (https://mymemory.translated.net -- no signup/API key required, see
+  // ContentBuilders.BEDROCK_LANGUAGES for the language list). Keys are
+  // never translated, only values (translating "item.custom:sword" itself
+  // would break the game's lookup). Best-effort: MyMemory's free tier has
+  // a modest daily character quota and can occasionally return a low-
+  // quality/untranslated match for obscure phrases -- lines that fail to
+  // translate (network error, quota, etc) are left in English rather than
+  // blocked/dropped, with a toast warning if that happens.
+  function renderLanguageAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Language / Translate"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    const { rpRoot } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+    const langPath = rpRoot !== null ? joinPath(rpRoot ?? "", "texts", "en_US.lang") : null;
+    const existing = langPath ? vfs.get(langPath) : null;
+    const currentEntries = ContentBuilders.parseLangFile(existing ? existing.content : "");
+    const currentKeyRows = currentEntries.filter((e) => e.type === "entry");
+
+    const keyInput = el("input", { class: "pas-input", type: "text", placeholder: "item.custom:sword", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const valueInput = el("input", { class: "pas-input", type: "text", placeholder: "Magic Sword", autocomplete: "off" });
+
+    const existingListEl = el(
+      "div",
+      { class: "pas-upload-file-list" },
+      currentKeyRows.length
+        ? currentKeyRows.map((e) => el("div", { class: "pas-upload-file-row" }, [`${e.key}=${e.value}`]))
+        : [el("div", { class: "pas-form-hint" }, ["No en_US.lang yet -- add your first key below, or add an Item/Block/Entity with a display name first."])]
+    );
+
+    const targetLangSelect = el(
+      "select",
+      { class: "pas-input" },
+      ContentBuilders.BEDROCK_LANGUAGES.filter(([code]) => code !== "en_US").map(([code, label]) => el("option", { value: code }, [`${label} (${code})`]))
+    );
+    const translateStatusEl = el("div", { class: "pas-form-hint" }, []);
+    const translateBtn = el("button", { type: "button", class: "pas-btn pas-btn-primary", onclick: () => runTranslate() }, ["Translate en_US.lang \u2192 selected language"]);
+
+    async function runTranslate() {
+      if (!currentKeyRows.length) {
+        translateStatusEl.textContent = "Nothing to translate yet -- en_US.lang is empty.";
+        return;
+      }
+      translateBtn.disabled = true;
+      const targetCode = targetLangSelect.value;
+      const targetLangTag = targetCode.split("_")[0];
+      translateStatusEl.textContent = `Translating ${currentKeyRows.length} line${currentKeyRows.length === 1 ? "" : "s"}...`;
+      let failCount = 0;
+      const translatedEntries = [];
+      for (const entryRow of currentEntries) {
+        if (entryRow.type !== "entry") {
+          translatedEntries.push(entryRow);
+          continue;
+        }
+        try {
+          const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(entryRow.value)}&langpair=en|${targetLangTag}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          const translated = data && data.responseData && data.responseData.translatedText;
+          const value = translated && data.responseStatus === 200 ? translated : entryRow.value;
+          if (!translated || data.responseStatus !== 200) failCount++;
+          translatedEntries.push({ type: "entry", key: entryRow.key, value, raw: `${entryRow.key}=${value}` });
+        } catch (err) {
+          failCount++;
+          translatedEntries.push(entryRow);
+        }
+      }
+      const translatedText = ContentBuilders.stringifyLangFile(translatedEntries);
+      const targetRoot = rpRoot ?? "";
+      const newLangPath = joinPath(targetRoot, "texts", `${targetCode}.lang`);
+      const existingTarget = vfs.get(newLangPath);
+      if (existingTarget) {
+        vfs.setContent(newLangPath, translatedText);
+        if (editorManager.hasState(newLangPath)) editorManager.setContent(newLangPath, translatedText);
+      } else {
+        vfs.createFile(newLangPath, translatedText, { isText: true });
+      }
+      const languagesPath = joinPath(targetRoot, "texts", "languages.json");
+      const existingLanguages = vfs.get(languagesPath);
+      let existingCodes = [];
+      if (existingLanguages) {
+        try {
+          existingCodes = JSON.parse(existingLanguages.content) || [];
+        } catch (e) {
+          existingCodes = [];
+        }
+      }
+      const languagesJson = ContentBuilders.buildLanguagesJson([...existingCodes, targetCode]);
+      if (existingLanguages) {
+        vfs.setContent(languagesPath, languagesJson);
+        if (editorManager.hasState(languagesPath)) editorManager.setContent(languagesPath, languagesJson);
+      } else {
+        vfs.createFile(languagesPath, languagesJson, { isText: true });
+      }
+      translateBtn.disabled = false;
+      translateStatusEl.textContent = failCount
+        ? `Done, but ${failCount} line${failCount === 1 ? "" : "s"} couldn't be translated (left in English) -- possibly a translation quota limit.`
+        : `Translated all ${currentKeyRows.length} lines into ${targetLangSelect.selectedOptions[0].textContent}.`;
+      closeContentPanel();
+      openFile(newLangPath);
+      toast(`Added texts/${targetCode}.lang.`);
+    }
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Current en_US.lang"]),
+        existingListEl,
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Add / update a key"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Key"]), keyInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Value"]), valueInput]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Translate"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Translate into"]), targetLangSelect]),
+        translateBtn,
+        translateStatusEl,
+      ]),
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Close"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              submitLanguageAdder({ rawKey: keyInput.value, value: valueInput.value });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Save key"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+  }
+
+  // Writes/updates a single manually-typed key into RP/texts/en_US.lang --
+  // creating a brand new BP/RP pair first if the explorer is completely
+  // empty, same as every other adder.
+  function submitLanguageAdder(fields) {
+    const key = fields.rawKey.trim();
+    if (!key) throw new Error("Lang key can't be empty, e.g. item.custom:sword.");
+    if (!fields.value.trim()) throw new Error("Value can't be empty.");
+
+    const { rpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+    const targetRoot = rpRoot ?? "";
+    writeAutoLangEntry(targetRoot, key, fields.value.trim());
+
+    closeContentPanel();
+    openFile(joinPath(targetRoot, "texts", "en_US.lang"));
+    toast(createdNew ? `Created ${projectName}_BP/_RP and saved "${key}".` : `Saved "${key}".`);
   }
 
   return () => {
