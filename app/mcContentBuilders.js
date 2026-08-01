@@ -140,9 +140,19 @@ function slugifyEventName(s) {
 // human-readable message on anything that can't be salvaged (e.g. empty
 // input, or a name that's nothing but symbols/whitespace) so the UI layer
 // can show it directly.
-function normalizeItemIdentifier(raw) {
+// Accepts anything the user typed ("Magic Sword", "magic_sword",
+// "custom:magic_sword", "My Addon:Magic Sword") and normalizes it into a
+// valid `namespace:name` Bedrock identifier, defaulting the namespace to
+// "custom" when none was given. Throws a plain Error with a
+// human-readable message on anything that can't be salvaged (e.g. empty
+// input, or a name that's nothing but symbols/whitespace) so the UI layer
+// can show it directly. `kind` (e.g. "Item ID", "Block ID") only affects
+// the wording of that error message -- shared by every content adder that
+// needs a namespace:name identifier (Item, Block, and eventually Entity).
+function normalizeNamespacedIdentifier(raw, kind) {
+  const label = kind || "Identifier";
   const trimmed = (raw || "").trim();
-  if (!trimmed) throw new Error("Item ID can't be empty.");
+  if (!trimmed) throw new Error(`${label} can't be empty.`);
   let ns, name;
   const idx = trimmed.indexOf(":");
   if (idx !== -1) {
@@ -153,8 +163,14 @@ function normalizeItemIdentifier(raw) {
     name = slugifyIdToken(trimmed);
   }
   if (!ns) ns = "custom";
-  if (!name) throw new Error("Item ID needs a name, e.g. custom:magic_sword.");
+  if (!name) throw new Error(`${label} needs a name, e.g. custom:${kind === "Block ID" ? "magic_block" : "magic_sword"}.`);
   return `${ns}:${name}`;
+}
+
+// Kept as a thin wrapper (rather than renaming every existing call site) --
+// identical behavior to normalizeNamespacedIdentifier(raw, "Item ID").
+function normalizeItemIdentifier(raw) {
+  return normalizeNamespacedIdentifier(raw, "Item ID");
 }
 
 function numberOr(value, fallback) {
@@ -637,6 +653,345 @@ function mergeItemTextureJson(existingContent, shortName, rpPackName) {
 }
 
 // ---------------------------------------------------------------------------
+// Full official block component schema -- same shape/purpose as
+// ITEM_COMPONENT_SCHEMA above, drives both the generic form UI
+// (app/main.js's renderBlockAdderForm()) and buildBlockFileJSON() below.
+// Every entry corresponds 1:1 with an entry in
+// https://wiki.bedrock.dev/blocks/block-components, current as of format
+// version ~1.21.80-1.26 (a couple of the newest 1.26.x-only components,
+// e.g. Chest Obstruction/Connection Rule/Flammable's newest object shape,
+// are included too since they degrade harmlessly to "unknown property,
+// ignored" on older game versions rather than breaking anything).
+// minecraft:geometry + minecraft:material_instances (the two every custom
+// block needs to actually render as something other than a purple/black
+// missing-texture cube) are handled in the "Appearance" section of the
+// form directly, same as an item's icon/display_name -- everything else
+// lives in this list under "Components".
+// ---------------------------------------------------------------------------
+const BLOCK_COMPONENT_SCHEMA = [
+  {
+    key: "destructibleByMiningEnabled",
+    component: "minecraft:destructible_by_mining",
+    label: "Destructible by mining",
+    detail: "How long it takes to mine (higher = slower). Uncheck the box below to make it unminable.",
+    fields: [
+      { name: "canBeMined", type: "checkbox", label: "Can be mined", def: true },
+      { name: "secondsToDestroy", type: "number", label: "Hardness (seconds_to_destroy)", def: "1" },
+    ],
+    build: (v) => (v.canBeMined === false ? false : { seconds_to_destroy: numberOr(v.secondsToDestroy, 1) }),
+  },
+  {
+    key: "destructibleByExplosionEnabled",
+    component: "minecraft:destructible_by_explosion",
+    label: "Destructible by explosion",
+    detail: "Whether TNT/creepers/etc can blow this block up.",
+    fields: [
+      { name: "canBeExploded", type: "checkbox", label: "Can be destroyed by explosions", def: true },
+      { name: "explosionResistance", type: "number", label: "Explosion resistance", def: "5" },
+    ],
+    build: (v) => (v.canBeExploded === false ? false : { explosion_resistance: numberOr(v.explosionResistance, 5) }),
+  },
+  {
+    key: "frictionEnabled",
+    component: "minecraft:friction",
+    label: "Friction (slipperiness)",
+    detail: "0.0-0.9. Lower values are more slippery, like ice.",
+    fields: [{ name: "frictionValue", type: "number", label: "Friction", def: "0.4", step: "0.05" }],
+    build: (v) => Math.min(0.9, Math.max(0, numberOr(v.frictionValue, 0.4))),
+  },
+  {
+    key: "lightEmissionEnabled",
+    component: "minecraft:light_emission",
+    label: "Emits light",
+    detail: "Light level 0-15, like a torch or glowstone.",
+    fields: [{ name: "lightLevel", type: "number", label: "Light level (0-15)", def: "15" }],
+    build: (v) => clampInt(v.lightLevel, 15, 0, 15),
+  },
+  {
+    key: "lightDampeningEnabled",
+    component: "minecraft:light_dampening",
+    label: "Light dampening",
+    detail: "How many light levels are blocked passing through this block (0 = fully see-through like glass).",
+    fields: [{ name: "dampeningLevel", type: "number", label: "Dampening (0-15)", def: "15" }],
+    build: (v) => clampInt(v.dampeningLevel, 15, 0, 15),
+  },
+  {
+    key: "flammableEnabled",
+    component: "minecraft:flammable",
+    label: "Flammable",
+    detail: "Can catch fire from neighboring flames and burn away, like planks or leaves.",
+    fields: [
+      { name: "catchChance", type: "number", label: "Catch chance modifier", def: "5" },
+      { name: "destroyChance", type: "number", label: "Destroy chance modifier", def: "20" },
+      { name: "lavaFlammable", type: "checkbox", label: "Can also catch fire from lava" },
+    ],
+    build: (v) => ({
+      catch_chance_modifier: clampInt(v.catchChance, 5, 0),
+      destroy_chance_modifier: clampInt(v.destroyChance, 20, 0),
+      lava_flammable: v.lavaFlammable ? "always" : "never",
+    }),
+  },
+  {
+    key: "mapColorEnabled",
+    component: "minecraft:map_color",
+    label: "Map color",
+    detail: "The color this block shows as on maps.",
+    fields: [{ name: "mapColorHex", type: "text", label: "Color (hex)", def: "#a52a2a" }],
+    build: (v) => v.mapColorHex || "#a52a2a",
+  },
+  {
+    key: "collisionBoxEnabled",
+    component: "minecraft:collision_box",
+    label: "Custom collision box",
+    detail: "The box entities/particles physically bump into. Leave unchecked for a normal full-size block.",
+    fields: [
+      { name: "collisionOriginX", type: "number", label: "Origin X", def: "-8" },
+      { name: "collisionOriginY", type: "number", label: "Origin Y", def: "0" },
+      { name: "collisionOriginZ", type: "number", label: "Origin Z", def: "-8" },
+      { name: "collisionSizeX", type: "number", label: "Size X", def: "16" },
+      { name: "collisionSizeY", type: "number", label: "Size Y", def: "16" },
+      { name: "collisionSizeZ", type: "number", label: "Size Z", def: "16" },
+    ],
+    build: (v) => ({
+      origin: [numberOr(v.collisionOriginX, -8), numberOr(v.collisionOriginY, 0), numberOr(v.collisionOriginZ, -8)],
+      size: [numberOr(v.collisionSizeX, 16), numberOr(v.collisionSizeY, 16), numberOr(v.collisionSizeZ, 16)],
+    }),
+  },
+  {
+    key: "selectionBoxEnabled",
+    component: "minecraft:selection_box",
+    label: "Custom selection box",
+    detail: "The box highlighted/clicked when aiming at the block. Leave unchecked for a normal full-size block.",
+    fields: [
+      { name: "selectionOriginX", type: "number", label: "Origin X", def: "-8" },
+      { name: "selectionOriginY", type: "number", label: "Origin Y", def: "0" },
+      { name: "selectionOriginZ", type: "number", label: "Origin Z", def: "-8" },
+      { name: "selectionSizeX", type: "number", label: "Size X", def: "16" },
+      { name: "selectionSizeY", type: "number", label: "Size Y", def: "16" },
+      { name: "selectionSizeZ", type: "number", label: "Size Z", def: "16" },
+    ],
+    build: (v) => ({
+      origin: [numberOr(v.selectionOriginX, -8), numberOr(v.selectionOriginY, 0), numberOr(v.selectionOriginZ, -8)],
+      size: [numberOr(v.selectionSizeX, 16), numberOr(v.selectionSizeY, 16), numberOr(v.selectionSizeZ, 16)],
+    }),
+  },
+  {
+    key: "lootEnabled",
+    component: "minecraft:loot",
+    label: "Custom loot table",
+    detail: "What drops when this block is destroyed (ignored with Silk Touch). Leave unchecked to just drop itself.",
+    fields: [{ name: "lootTablePath", type: "text", label: "Loot table path", placeholder: "loot_tables/blocks/my_block.json" }],
+    build: (v) => (v.lootTablePath || "").trim() || "loot_tables/blocks/custom_block.json",
+  },
+  {
+    key: "displayNameEnabled",
+    component: "minecraft:display_name",
+    label: "Display name (lang key)",
+    detail: "The .lang translation key shown when hovering over the block -- add the matching line to en_US.lang yourself.",
+    fields: [{ name: "displayNameKey", type: "text", label: "Lang key", placeholder: "tile.namespace:block_name.name" }],
+    build: (v) => (v.displayNameKey || "").trim() || "tile.custom:block.name",
+  },
+  {
+    key: "flowerPottableEnabled",
+    component: "minecraft:flower_pottable",
+    label: "Can be placed in a Flower Pot",
+    detail: "Root-only component -- lets this block be potted like a sapling or fern.",
+    fields: [],
+    build: () => ({}),
+  },
+  {
+    key: "craftingTableEnabled",
+    component: "minecraft:crafting_table",
+    label: "Acts as a crafting table",
+    detail: "Opens a crafting grid when interacted with.",
+    fields: [
+      { name: "craftingTableName", type: "text", label: "Table name shown in the UI", placeholder: "My Crafting Table" },
+      { name: "craftingTags", type: "text", label: "Crafting tags (comma separated)", def: "crafting_table" },
+    ],
+    build: (v) => {
+      const tags = csvToArray(v.craftingTags);
+      const out = { crafting_tags: tags.length ? tags : ["crafting_table"] };
+      if (v.craftingTableName && v.craftingTableName.trim()) out.table_name = v.craftingTableName.trim();
+      return out;
+    },
+  },
+  {
+    key: "tickEnabled",
+    component: "minecraft:tick",
+    label: "Ticks periodically",
+    detail: "Fires an onTick() event after a random delay -- used to build custom scripted block behavior.",
+    fields: [
+      { name: "tickMin", type: "number", label: "Min interval (ticks)", def: "10" },
+      { name: "tickMax", type: "number", label: "Max interval (ticks)", def: "20" },
+      { name: "tickLooping", type: "checkbox", label: "Keep ticking repeatedly", def: true },
+    ],
+    build: (v) => ({
+      interval_range: [clampInt(v.tickMin, 10, 1), clampInt(v.tickMax, 20, 1)],
+      looping: v.tickLooping !== false,
+    }),
+  },
+  {
+    key: "redstoneConductivityEnabled",
+    component: "minecraft:redstone_conductivity",
+    label: "Redstone conductivity",
+    detail: "Whether this block conducts direct redstone power, like a solid block does.",
+    fields: [
+      { name: "redstoneConductor", type: "checkbox", label: "Conducts direct power", def: true },
+      { name: "redstoneStepDown", type: "checkbox", label: "Redstone wire can travel down its side" },
+    ],
+    build: (v) => ({ redstone_conductor: !!v.redstoneConductor, allows_wire_to_step_down: !!v.redstoneStepDown }),
+  },
+  {
+    key: "redstoneProducerEnabled",
+    component: "minecraft:redstone_producer",
+    label: "Produces redstone power",
+    detail: "Acts as a redstone power source, like a lever or button.",
+    fields: [
+      { name: "redstonePower", type: "number", label: "Power level (0-15)", def: "15" },
+      {
+        name: "redstoneStrongFace",
+        type: "select",
+        label: "Strongly powered face",
+        def: "up",
+        options: ["up", "down", "north", "south", "east", "west"].map((v) => [v, v]),
+      },
+    ],
+    build: (v) => ({ power: clampInt(v.redstonePower, 15, 0, 15), strongly_powered_face: v.redstoneStrongFace || "up" }),
+  },
+  {
+    key: "replaceableEnabled",
+    component: "minecraft:replaceable",
+    label: "Replaceable",
+    detail: "Can be replaced by placing another block on top of it, like grass or a flower.",
+    fields: [],
+    build: () => ({}),
+  },
+  {
+    key: "liquidDetectionEnabled",
+    component: "minecraft:liquid_detection",
+    label: "Interacts with water",
+    detail: "Controls waterlogging and what happens when water flows into this block.",
+    fields: [
+      { name: "canContainLiquid", type: "checkbox", label: "Can be waterlogged", def: true },
+      {
+        name: "onLiquidTouches",
+        type: "select",
+        label: "When water touches this block",
+        def: "blocking",
+        options: [
+          ["blocking", "Blocks the water"],
+          ["broken", "Block breaks"],
+          ["no_reaction", "Water flows through"],
+          ["popped", "Block pops off"],
+        ],
+      },
+    ],
+    build: (v) => ({
+      detection_rules: [{ liquid_type: "water", can_contain_liquid: v.canContainLiquid !== false, on_liquid_touches: v.onLiquidTouches || "blocking" }],
+    }),
+  },
+  {
+    key: "movableEnabled",
+    component: "minecraft:movable",
+    label: "Piston interaction",
+    detail: "How this block reacts when a piston tries to push/pull it.",
+    fields: [
+      {
+        name: "movementType",
+        type: "select",
+        label: "Movement type",
+        def: "push_pull",
+        options: [
+          ["push_pull", "Can be pushed and pulled"],
+          ["push", "Can only be pushed"],
+          ["popped", "Pops off as an item"],
+          ["immovable", "Cannot be moved"],
+        ],
+      },
+      { name: "movableSticky", type: "checkbox", label: "Sticky (like slime/honey blocks)" },
+    ],
+    build: (v) => {
+      const out = { movement_type: v.movementType || "push_pull" };
+      if (v.movableSticky) out.sticky = "same";
+      return out;
+    },
+  },
+  {
+    key: "tagsEnabled",
+    component: "minecraft:tags",
+    label: "Custom tags",
+    detail: "Attaches arbitrary tags to the block, usable in recipes/loot tables/scripts.",
+    fields: [{ name: "tagsList", type: "text", label: "Tags (comma separated)", placeholder: "namespace:custom_tag" }],
+    build: (v) => csvToArray(v.tagsList),
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Block behavior-file JSON builder.
+// ---------------------------------------------------------------------------
+
+// `fields` mirrors the block-adder form, same shape as buildItemFileJSON's
+// `fields.components` map ({ [schemaEntry.key]: { enabled, ...values } }).
+// Produces a complete, standalone, valid minecraft:block JSON file --
+// always with a minecraft:material_instances entry (texture) since a
+// block with no texture at all renders as an untextured checkerboard,
+// which is never what anyone actually wants.
+function buildBlockFileJSON(fields) {
+  const components = {};
+  const textureName = fields.blockTexture || "custom:missing";
+  components["minecraft:material_instances"] = { "*": { texture: textureName, render_method: fields.renderMethod || "opaque" } };
+  if (fields.geometry) components["minecraft:geometry"] = fields.geometry;
+
+  const chosen = fields.components || {};
+  for (const entry of BLOCK_COMPONENT_SCHEMA) {
+    if (entry.hidden) continue;
+    const values = chosen[entry.key];
+    if (!values || !values.enabled) continue;
+    const result = entry.build(values);
+    // A couple of block components (destructible_by_mining/_by_explosion)
+    // legitimately build to boolean `false` on purpose (see their own
+    // comments above) rather than "not present at all" -- `false` is a
+    // valid, meaningful JSON value here so it must still be written out,
+    // unlike the general "skip if falsy" checks used elsewhere.
+    if (result === undefined) continue;
+    components[entry.component] = result;
+  }
+
+  const description = { identifier: fields.identifier };
+  if (fields.category) {
+    description.menu_category = { category: fields.category };
+  }
+
+  const root = {
+    format_version: "1.21.80",
+    "minecraft:block": { description, components },
+  };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// Merges a new terrain_texture.json entry into whatever's already there --
+// mirrors mergeItemTextureJson exactly, just pointed at the block texture
+// atlas/folder instead of the item one (see
+// https://wiki.bedrock.dev/blocks/block-visuals-intro#terrain-textures).
+function mergeTerrainTextureJson(existingContent, shortName, rpPackName) {
+  let obj = null;
+  if (existingContent) {
+    try {
+      const parsed = JSON.parse(existingContent);
+      if (parsed && typeof parsed === "object") obj = parsed;
+    } catch (e) {
+      obj = null;
+    }
+  }
+  if (!obj) {
+    obj = { resource_pack_name: rpPackName || "pack", texture_name: "atlas.terrain", padding: 8, num_mip_levels: 4, texture_data: {} };
+  }
+  if (!obj.texture_data || typeof obj.texture_data !== "object") obj.texture_data = {};
+  obj.texture_data[shortName] = { textures: `textures/blocks/${shortName}` };
+  return JSON.stringify(obj, null, 4) + "\n";
+}
+
+// ---------------------------------------------------------------------------
 // Splash text builder -- see https://wiki.bedrock.dev/text/splashes.
 // splashes.json lives directly at the resource pack root (not inside a
 // subfolder) and has just two fields: `canMerge` (whether vanilla's own
@@ -742,12 +1097,17 @@ window.ContentBuilders = {
   slugifyIdToken,
   slugifyEventName,
   normalizeItemIdentifier,
+  normalizeNamespacedIdentifier,
   buildItemFileJSON,
   mergeItemTextureJson,
   mergeSplashesJson,
   mergeSoundDefinitionsJson,
   mergeMusicDefinitionsJson,
+  buildBlockFileJSON,
+  mergeTerrainTextureJson,
   ITEM_COMPONENT_SCHEMA,
+  BLOCK_COMPONENT_SCHEMA,
 };
+
 
 

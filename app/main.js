@@ -632,7 +632,7 @@ function initApp(host) {
   const CONTENT_TYPES = [
     { id: "item", label: "Item", icon: "\u2694\uFE0F", enabled: true, render: renderItemAdderForm },
     { id: "entity", label: "Entity", icon: "\u{1F9DF}", enabled: false },
-    { id: "block", label: "Block", icon: "\u{1F9F1}", enabled: false },
+    { id: "block", label: "Block", icon: "\u{1F9F1}", enabled: true, render: renderBlockAdderForm },
     { id: "sound", label: "Sound", icon: "\u{1F50A}", enabled: true, render: renderSoundAdderForm },
     { id: "splash", label: "Splash", icon: "\u{1F4A6}", enabled: true, render: renderSplashAdderForm },
   ];
@@ -910,6 +910,208 @@ function initApp(host) {
     closeContentPanel();
     openFile(itemNode.path);
     toast(createdNew ? `Created ${projectName}_BP/_RP and added "${identifier}".` : `Added item "${identifier}".`);
+  }
+
+  // ---- Block adder ---------------------------------------------------
+  // See https://wiki.bedrock.dev/blocks/block-components. Same overall
+  // shape as the Item adder above (schema-driven component checklist +
+  // a texture upload box), except the block's texture writes into
+  // terrain_texture.json / textures/blocks/ instead of item_texture.json /
+  // textures/items/, and every block always gets a
+  // minecraft:material_instances entry (never optional like an item's
+  // icon) since a block with literally no texture renders as a solid
+  // untextured/missing-texture cube -- there's no sensible "blank" default
+  // the way there is for an item.
+  function renderBlockAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add Block"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    const idInput = el("input", { class: "pas-input", type: "text", placeholder: "custom:magic_block", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const categorySelect = el("select", { class: "pas-input" }, [
+      el("option", { value: "construction" }, ["Construction"]),
+      el("option", { value: "nature" }, ["Nature"]),
+      el("option", { value: "equipment" }, ["Equipment"]),
+      el("option", { value: "items" }, ["Items"]),
+      el("option", { value: "none" }, ["None (commands only)"]),
+    ]);
+    const renderMethodSelect = el("select", { class: "pas-input" }, [
+      el("option", { value: "opaque" }, ["Opaque (solid, default)"]),
+      el("option", { value: "alpha_test" }, ["Alpha test (cutout transparency, e.g. leaves)"]),
+      el("option", { value: "blend" }, ["Blend (see-through transparency, e.g. glass)"]),
+      el("option", { value: "double_sided" }, ["Double sided (visible from both sides)"]),
+    ]);
+
+    // ---- Texture: upload a PNG (preferred) or type a short name --------
+    let uploadedTextureFile = null; // { name, bytesB64 } | null
+    const textureInput = el("input", { class: "pas-input", type: "text", placeholder: "magic_block (texture short name)", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+    const textureFilePicker = el("input", { type: "file", accept: "image/png,.png", hidden: true });
+    const textureUploadStatus = el("div", { class: "pas-form-hint" }, ["No texture uploaded yet -- the block will render as a missing-texture checkerboard until one is added."]);
+    const textureUploadBox = el(
+      "button",
+      { type: "button", class: "pas-icon-upload-box", onclick: () => textureFilePicker.click() },
+      [
+        el("span", { class: "pas-icon-upload-icon" }, ["\u{1F5BC}\uFE0F"]),
+        el("span", {}, ["Tap to upload a terrain texture PNG"]),
+        el("span", { class: "pas-form-hint" }, ["PNG recommended -- a seamless, tileable square image works best."]),
+      ]
+    );
+    textureFilePicker.addEventListener("change", async () => {
+      const file = textureFilePicker.files && textureFilePicker.files[0];
+      textureFilePicker.value = "";
+      if (!file) return;
+      try {
+        const buf = await file.arrayBuffer();
+        uploadedTextureFile = { name: file.name, bytesB64: bytesToB64(new Uint8Array(buf)) };
+        const guessedName = ContentBuilders.slugifyIdToken(file.name.replace(/\.[^.]+$/, ""));
+        if (!textureInput.value.trim() && guessedName) textureInput.value = guessedName;
+        textureUploadBox.classList.add("has-file");
+        textureUploadStatus.textContent = `Uploaded "${file.name}" -- will be saved as textures/blocks/${textureInput.value || guessedName}.png`;
+      } catch (err) {
+        console.error(err);
+        toast("Couldn't read that image file.", { type: "error" });
+      }
+    });
+    textureInput.addEventListener("input", () => {
+      if (uploadedTextureFile) {
+        const shortName = ContentBuilders.slugifyIdToken(textureInput.value) || "block";
+        textureUploadStatus.textContent = `Uploaded "${uploadedTextureFile.name}" -- will be saved as textures/blocks/${shortName}.png`;
+      }
+    });
+
+    // ---- Every official block component, generically -------------------
+    const componentReaders = []; // [{ key, enabledCheck, readValues }]
+    const componentRows = ContentBuilders.BLOCK_COMPONENT_SCHEMA.map((entry) => {
+      const enabledCheck = el("input", { type: "checkbox" });
+      const { fieldsEl, readValues } = buildComponentSubfields(entry);
+      enabledCheck.addEventListener("change", () => fieldsEl.classList.toggle("is-visible", enabledCheck.checked));
+      componentReaders.push({ key: entry.key, enabledCheck, readValues });
+      return el("div", { class: "pas-component-block" }, [
+        el("div", { class: "pas-form-check" }, [
+          el("div", { class: "pas-component-label" }, [
+            el("label", {}, [entry.label]),
+            el("div", { class: "pas-form-hint" }, [entry.detail]),
+          ]),
+          enabledCheck,
+        ]),
+        fieldsEl,
+      ]);
+    });
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Identity"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Block ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace."])]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Appearance"]),
+        el("div", { class: "pas-form-row" }, [
+          el("label", {}, ["Block texture"]),
+          textureUploadBox,
+          textureFilePicker,
+          el("div", { class: "pas-form-row", style: "margin-top:8px" }, [el("label", {}, ["Texture short name"]), textureInput]),
+          textureUploadStatus,
+        ]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Render method"]), renderMethodSelect]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Basics"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Creative category"]), categorySelect]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Components"]),
+        el("div", { class: "pas-form-hint", style: "margin-bottom:10px" }, ["Every official Bedrock block component -- tap a switch to reveal its options."]),
+        ...componentRows,
+      ]),
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              const components = {};
+              for (const { key, enabledCheck, readValues } of componentReaders) {
+                components[key] = { enabled: enabledCheck.checked, ...readValues() };
+              }
+              submitBlockAdder({
+                rawIdentifier: idInput.value,
+                blockTexture: ContentBuilders.slugifyIdToken(textureInput.value),
+                textureFile: uploadedTextureFile,
+                renderMethod: renderMethodSelect.value,
+                category: categorySelect.value,
+                components,
+              });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Add Block"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+    setTimeout(() => idInput.focus(), 60);
+  }
+
+  // Actually writes the new block's file(s) into whatever add-on project is
+  // currently in the explorer -- creating a brand new BP/RP pair first if
+  // the explorer is completely empty (see ensureAddonScaffold in
+  // app/mcContentBuilders.js for exactly how that decision is made).
+  function submitBlockAdder(fields) {
+    const identifier = ContentBuilders.normalizeNamespacedIdentifier(fields.rawIdentifier, "Block ID");
+    const shortName = identifier.split(":")[1];
+
+    const { bpRoot, rpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+
+    // A block absolutely needs SOME texture reference to not render as a
+    // missing-texture checkerboard -- if the user didn't type/upload one at
+    // all, fall back to the block's own short name so at least the
+    // reference is self-consistent and easy to find/fix later by adding a
+    // textures/blocks/<name>.png file with that exact name by hand.
+    const textureName = fields.blockTexture || shortName;
+
+    const json = ContentBuilders.buildBlockFileJSON({ ...fields, identifier, blockTexture: textureName });
+    const desiredPath = joinPath(bpRoot, "blocks", `${shortName}.json`);
+    // createFile() already picks a unique "name (1).json" style path on its
+    // own if `desiredPath` is taken (see VFS.uniquePath in app/fs.js) --
+    // so this never silently clobbers an existing block with the same name.
+    const blockNode = vfs.createFile(desiredPath, json, { isText: true });
+
+    // Resource-pack side: only touch terrain_texture.json / write the PNG
+    // if we actually know where the resource pack lives -- a block whose
+    // texture reference doesn't (yet) resolve to a real texture_data entry
+    // still parses/loads fine in Minecraft, it just shows the missing-
+    // texture checkerboard until textures/blocks/<name>.png + this entry
+    // both exist, so this is best-effort, not required.
+    if (rpRoot) {
+      const texturePath = joinPath(rpRoot, "textures", "terrain_texture.json");
+      const existing = vfs.get(texturePath);
+      const merged = ContentBuilders.mergeTerrainTextureJson(existing ? existing.content : null, textureName, projectName);
+      if (existing) {
+        vfs.setContent(texturePath, merged);
+        if (editorManager.hasState(texturePath)) editorManager.setContent(texturePath, merged);
+      } else {
+        vfs.createFile(texturePath, merged, { isText: true });
+      }
+      if (fields.textureFile) {
+        const pngPath = joinPath(rpRoot, "textures", "blocks", `${textureName}.png`);
+        vfs.createFile(pngPath, fields.textureFile.bytesB64, { isText: false });
+      }
+    }
+
+    closeContentPanel();
+    openFile(blockNode.path);
+    toast(createdNew ? `Created ${projectName}_BP/_RP and added "${identifier}".` : `Added block "${identifier}".`);
   }
 
   // ---- Splash adder -------------------------------------------------------
