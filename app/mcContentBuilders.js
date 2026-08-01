@@ -6,10 +6,11 @@
 //
 // The overall idea: the user taps the create_icon.png button, picks a
 // content type (only "Item" is wired up for now -- the others are listed
-// but show a "coming soon" toast), fills in a small form, and this module
-// works out *where* the new file(s) should go inside whatever add-on
-// project is currently open in the explorer (creating a brand new BP/RP
-// project from scratch if the explorer is empty), then writes them.
+// but show a "coming soon" toast), fills in a form built from
+// ITEM_COMPONENT_SCHEMA below, and this module works out *where* the new
+// file(s) should go inside whatever add-on project is currently open in the
+// explorer (creating a brand new BP/RP project from scratch if the
+// explorer is empty), then writes them.
 // ---------------------------------------------------------------------------
 
 // Walks the whole VFS tree and returns every folder's path (not files),
@@ -142,24 +143,429 @@ function normalizeItemIdentifier(raw) {
 
 function numberOr(value, fallback) {
   const n = Number(value);
-  return value !== "" && Number.isFinite(n) ? n : fallback;
+  return value !== "" && value !== undefined && value !== null && Number.isFinite(n) ? n : fallback;
+}
+
+function clampInt(value, fallback, min, max) {
+  let n = Math.round(numberOr(value, fallback));
+  if (!Number.isFinite(n)) n = fallback;
+  if (min !== undefined && n < min) n = min;
+  if (max !== undefined && n > max) n = max;
+  return n;
 }
 
 function clampStackSize(value) {
-  let n = Math.round(numberOr(value, 64));
-  if (!Number.isFinite(n) || n < 1) n = 1;
-  if (n > 9999) n = 9999;
-  return n;
+  return clampInt(value, 64, 1, 9999);
 }
+
+function csvToArray(s) {
+  return (s || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// Full official item component schema -- drives both the generic form UI
+// (app/main.js's renderItemAdderForm()) and buildItemFileJSON() below, so
+// adding/adjusting a component only ever needs a change in ONE place. Every
+// entry here corresponds 1:1 with an entry in Mojang's own "Item Components"
+// reference (https://learn.microsoft.com/minecraft/creator/.../itemcomponentlist)
+// and wiki.bedrock.dev/items/item-components, current as of format_version
+// 1.21.80-ish. `minecraft:icon`, `minecraft:display_name` and
+// `minecraft:max_stack_size` are handled separately (in the "Identity"/
+// "Basics" section of the form) since almost every item wants them --
+// everything else lives in this list under "Components".
+//
+// Each entry:
+//   key          -- unique id, also the checkbox's field name in the form
+//   component    -- the "minecraft:xxx" JSON key written out
+//   label        -- shown next to the on/off checkbox
+//   detail       -- one-line description shown under the label
+//   fields       -- sub-fields shown (indented) only once the checkbox is
+//                   ticked; empty array for boolean/no-config components
+//                   that are just `true` when enabled.
+//   build(values)-- given the sub-fields' raw string/bool values (already
+//                   read out of the form inputs), returns the JSON value to
+//                   assign to `components[component]`.
+//
+// Field types supported by the generic form renderer (app/main.js):
+//   "text" | "number" | "select" | "checkbox" | "textarea" (comma list)
+// ---------------------------------------------------------------------------
+const ITEM_COMPONENT_SCHEMA = [
+  {
+    key: "handEquipped",
+    component: "minecraft:hand_equipped",
+    label: "Hand equipped",
+    detail: "Shows as a held tool/weapon model instead of a flat icon.",
+    fields: [],
+    build: () => true,
+  },
+  {
+    key: "glint",
+    component: "minecraft:glint",
+    label: "Enchanted glint",
+    detail: "Renders the shimmering enchant effect (renamed from minecraft:foil in 1.20.20).",
+    fields: [],
+    build: () => true,
+  },
+  {
+    key: "foodEnabled",
+    component: "minecraft:food",
+    label: "Edible (food)",
+    detail: "Allows the item to be eaten. Also sets use_animation/use_duration automatically.",
+    fields: [
+      { name: "foodNutrition", type: "number", label: "Nutrition", def: "4" },
+      { name: "foodSaturation", type: "number", label: "Saturation modifier", def: "0.6", step: "0.1" },
+      { name: "foodCanAlwaysEat", type: "checkbox", label: "Can always eat (even when full)" },
+      { name: "foodConvertsTo", type: "text", label: "Converts to item on use (optional)", placeholder: "minecraft:bowl" },
+    ],
+    build: (v) => ({
+      nutrition: clampInt(v.foodNutrition, 4),
+      saturation_modifier: numberOr(v.foodSaturation, 0.6),
+      can_always_eat: !!v.foodCanAlwaysEat,
+      ...(v.foodConvertsTo ? { using_converts_to: v.foodConvertsTo.trim() } : {}),
+    }),
+    // Food items need a use animation/duration to actually be eaten in
+    // game, not just declared edible -- so this component also injects
+    // those two extra top-level components alongside itself.
+    extraComponents: (v) => ({
+      "minecraft:use_animation": "eat",
+      "minecraft:use_duration": numberOr(v.foodUseDuration, 1.6),
+    }),
+  },
+  {
+    key: "durabilityEnabled",
+    component: "minecraft:durability",
+    label: "Has durability (can be damaged)",
+    detail: "Lets the item take damage and eventually break; enables repairing.",
+    fields: [{ name: "maxDurability", type: "number", label: "Max durability", def: "250" }],
+    build: (v) => ({ max_durability: clampInt(v.maxDurability, 250, 1) }),
+  },
+  {
+    key: "wearableEnabled",
+    component: "minecraft:wearable",
+    label: "Wearable",
+    detail: "Lets the item be worn/equipped in a specific slot (armor, offhand, ...).",
+    fields: [
+      {
+        name: "wearableSlot",
+        type: "select",
+        label: "Equipment slot",
+        def: "slot.armor.chest",
+        options: [
+          ["slot.armor.head", "Head"],
+          ["slot.armor.chest", "Chest"],
+          ["slot.armor.legs", "Legs"],
+          ["slot.armor.feet", "Feet"],
+          ["slot.armor.body", "Body (e.g. horse/wolf armor)"],
+          ["slot.weapon.offhand", "Offhand"],
+        ],
+      },
+      { name: "wearableProtection", type: "number", label: "Protection (armor value)", def: "0" },
+    ],
+    build: (v) => ({ slot: v.wearableSlot || "slot.armor.chest", protection: clampInt(v.wearableProtection, 0, 0) }),
+  },
+  {
+    key: "enchantableEnabled",
+    component: "minecraft:enchantable",
+    label: "Enchantable",
+    detail: "Allows the item to be enchanted (enchanting table, anvil, loot tables).",
+    fields: [
+      {
+        name: "enchantSlot",
+        type: "select",
+        label: "Enchantment slot type",
+        def: "sword",
+        options: [
+          "all", "armor_feet", "armor_torso", "armor_head", "armor_legs", "axe", "bow", "carrot_stick",
+          "cosmetic_head", "crossbow", "elytra", "fishing_rod", "flintsteel", "g_armor", "g_digging",
+          "g_tool", "hoe", "melee_spear", "none", "pickaxe", "shears", "shield", "shovel", "spear", "sword",
+        ].map((v) => [v, v]),
+      },
+      { name: "enchantValue", type: "number", label: "Enchantability value (0-255)", def: "10" },
+    ],
+    build: (v) => ({ slot: v.enchantSlot || "sword", value: clampInt(v.enchantValue, 10, 0, 255) }),
+  },
+  {
+    key: "diggerEnabled",
+    component: "minecraft:digger",
+    label: "Digger (mining tool)",
+    detail: "Digs specific blocks faster than bare hands (pickaxe/axe/shovel-style items).",
+    fields: [
+      { name: "diggerEfficiency", type: "checkbox", label: "Use efficiency enchantment", def: true },
+      { name: "diggerBlocks", type: "text", label: "Fast-mined block IDs (comma separated)", placeholder: "minecraft:stone, minecraft:coal_ore" },
+      { name: "diggerSpeed", type: "number", label: "Destroy speed for those blocks", def: "4" },
+    ],
+    build: (v) => {
+      const blocks = csvToArray(v.diggerBlocks);
+      return {
+        use_efficiency: !!v.diggerEfficiency,
+        destroy_speeds: blocks.length ? blocks.map((block) => ({ block, speed: numberOr(v.diggerSpeed, 4) })) : [],
+      };
+    },
+  },
+  {
+    key: "damageEnabled",
+    component: "minecraft:damage",
+    label: "Attack damage",
+    detail: "Extra melee damage this item deals on attack.",
+    fields: [{ name: "damageValue", type: "number", label: "Damage", def: "3" }],
+    build: (v) => clampInt(v.damageValue, 3, 0),
+  },
+  {
+    key: "repairableEnabled",
+    component: "minecraft:repairable",
+    label: "Repairable",
+    detail: "Lets specific items restore this item's durability (anvil/grindstone/crafting).",
+    fields: [
+      { name: "repairItems", type: "text", label: "Repair item IDs (comma separated)", placeholder: "minecraft:iron_ingot" },
+      { name: "repairAmount", type: "number", label: "Durability restored per repair", def: "" },
+    ],
+    build: (v) => {
+      const items = csvToArray(v.repairItems);
+      if (!items.length) return { repair_items: [] };
+      const entry = { items };
+      if (v.repairAmount !== "" && v.repairAmount !== undefined) entry.repair_amount = numberOr(v.repairAmount, undefined);
+      return { repair_items: [entry] };
+    },
+  },
+  {
+    key: "cooldownEnabled",
+    component: "minecraft:cooldown",
+    label: "Cooldown after use",
+    detail: "Item (and anything sharing its cooldown category) becomes unusable for a bit after use.",
+    fields: [
+      { name: "cooldownCategory", type: "text", label: "Cooldown category", def: "custom_cooldown" },
+      { name: "cooldownDuration", type: "number", label: "Duration (seconds)", def: "1.5" },
+    ],
+    build: (v) => ({ category: v.cooldownCategory || "custom_cooldown", duration: numberOr(v.cooldownDuration, 1.5) }),
+  },
+  {
+    key: "fuelEnabled",
+    component: "minecraft:fuel",
+    label: "Furnace fuel",
+    detail: "Lets this item be burned as furnace fuel.",
+    fields: [{ name: "fuelDuration", type: "number", label: "Burn duration (seconds)", def: "10" }],
+    build: (v) => ({ duration: numberOr(v.fuelDuration, 10) }),
+  },
+  {
+    key: "blockPlacerEnabled",
+    component: "minecraft:block_placer",
+    label: "Places a block",
+    detail: "Turns this into a block-placing item, like a bucket of blocks.",
+    fields: [{ name: "blockPlacerBlock", type: "text", label: "Block ID to place", placeholder: "namespace:block_name" }],
+    build: (v) => ({ block: (v.blockPlacerBlock || "").trim() || "minecraft:stone" }),
+  },
+  {
+    key: "entityPlacerEnabled",
+    component: "minecraft:entity_placer",
+    label: "Places an entity",
+    detail: "Like a spawn egg -- places an entity into the world when used.",
+    fields: [{ name: "entityPlacerEntity", type: "text", label: "Entity ID to place", placeholder: "namespace:entity_name" }],
+    build: (v) => ({ entity: (v.entityPlacerEntity || "").trim() || "minecraft:pig" }),
+  },
+  {
+    key: "projectileEnabled",
+    component: "minecraft:projectile",
+    label: "Is a projectile",
+    detail: "Can be shot from dispensers or used as ammo with a Shooter item (like an arrow).",
+    fields: [
+      { name: "projectileEntity", type: "text", label: "Projectile entity ID", placeholder: "minecraft:arrow" },
+      { name: "projectileMinCritPower", type: "number", label: "Minimum critical power", def: "1.25" },
+    ],
+    build: (v) => ({
+      projectile_entity: (v.projectileEntity || "").trim() || "minecraft:arrow",
+      minimum_critical_power: numberOr(v.projectileMinCritPower, 1.25),
+    }),
+  },
+  {
+    key: "shooterEnabled",
+    component: "minecraft:shooter",
+    label: "Shoots projectiles",
+    detail: "Fires ammunition, like a bow or crossbow.",
+    fields: [
+      { name: "shooterAmmo", type: "text", label: "Ammunition item ID", placeholder: "minecraft:arrow" },
+      { name: "shooterMaxDraw", type: "number", label: "Max draw duration (seconds)", def: "1" },
+    ],
+    build: (v) => ({
+      ammunition: [{ item: (v.shooterAmmo || "").trim() || "minecraft:arrow", use_offhand: true, search_inventory: true, use_in_creative: true }],
+      max_draw_duration: numberOr(v.shooterMaxDraw, 1),
+      scale_power_by_draw_duration: true,
+    }),
+  },
+  {
+    key: "throwableEnabled",
+    component: "minecraft:throwable",
+    label: "Throwable",
+    detail: "Can be thrown by the player, like a snowball or ender pearl.",
+    fields: [{ name: "throwableSwingAnim", type: "checkbox", label: "Play swing animation when thrown", def: true }],
+    build: (v) => ({ do_swing_animation: !!v.throwableSwingAnim, launch_power_scale: 1, max_launch_power: 1 }),
+  },
+  {
+    key: "compostableEnabled",
+    component: "minecraft:compostable",
+    label: "Compostable",
+    detail: "Can be placed in a composter to make bone meal.",
+    fields: [{ name: "compostChance", type: "number", label: "Chance to raise the compost level (%)", def: "65" }],
+    build: (v) => ({ composting_chance: clampInt(v.compostChance, 65, 0, 100) }),
+  },
+  {
+    key: "rarityEnabled",
+    component: "minecraft:rarity",
+    label: "Rarity",
+    detail: "Colors the item's hover name based on how rare it is.",
+    fields: [
+      {
+        name: "rarityValue",
+        type: "select",
+        label: "Rarity",
+        def: "common",
+        options: [
+          ["common", "Common (white)"],
+          ["uncommon", "Uncommon (yellow)"],
+          ["rare", "Rare (aqua)"],
+          ["epic", "Epic (light purple)"],
+        ],
+      },
+    ],
+    build: (v) => v.rarityValue || "common",
+  },
+  {
+    key: "hoverTextColorEnabled",
+    component: "minecraft:hover_text_color",
+    label: "Hover text color",
+    detail: "Overrides the hover name color directly (takes priority over Rarity).",
+    fields: [
+      {
+        name: "hoverTextColorValue",
+        type: "select",
+        label: "Color",
+        def: "gold",
+        options: [
+          "black", "dark_blue", "dark_green", "dark_aqua", "dark_red", "dark_purple", "gold", "gray",
+          "dark_gray", "blue", "green", "aqua", "red", "light_purple", "yellow", "white", "minecoin_gold",
+        ].map((v) => [v, v.replace(/_/g, " ")]),
+      },
+    ],
+    build: (v) => v.hoverTextColorValue || "gold",
+  },
+  {
+    key: "allowOffHand",
+    component: "minecraft:allow_off_hand",
+    label: "Allow off-hand",
+    detail: "Can be placed into the off-hand inventory slot.",
+    fields: [],
+    build: () => true,
+  },
+  {
+    key: "canDestroyInCreative",
+    component: "minecraft:can_destroy_in_creative",
+    label: "Can destroy blocks in Creative",
+    detail: "Left-click breaks blocks instantly in Creative mode (default off for non-sword items).",
+    fields: [],
+    build: () => true,
+  },
+  {
+    key: "fireResistant",
+    component: "minecraft:fire_resistant",
+    label: "Fire resistant",
+    detail: "Doesn't burn up when dropped in fire/lava.",
+    fields: [],
+    build: () => true,
+  },
+  {
+    key: "preventDespawn",
+    component: "minecraft:should_despawn",
+    label: "Never despawns on the ground",
+    detail: "Prevents this item from disappearing over time when dropped (vanilla default: despawns).",
+    fields: [],
+    build: () => false,
+  },
+  {
+    key: "stackedByData",
+    component: "minecraft:stacked_by_data",
+    label: "Stack only with identical data",
+    detail: "Items with different aux/data values won't stack together.",
+    fields: [],
+    build: () => true,
+  },
+  {
+    key: "liquidClipped",
+    component: "minecraft:liquid_clipped",
+    label: "Interacts with liquids on use",
+    detail: "Item's \"use\" raycast can hit water/lava instead of passing through.",
+    fields: [],
+    build: () => true,
+  },
+  {
+    key: "interactButtonEnabled",
+    component: "minecraft:interact_button",
+    label: "Show touch \"interact\" button",
+    detail: "Shows an on-screen button on touch controls for using this item.",
+    fields: [{ name: "interactButtonText", type: "text", label: "Button text (optional, blank = default \"Use Item\")", placeholder: "" }],
+    build: (v) => (v.interactButtonText ? v.interactButtonText.trim() : true),
+  },
+  {
+    key: "dyeableEnabled",
+    component: "minecraft:dyeable",
+    label: "Dyeable",
+    detail: "Can be dyed via cauldron water, like leather armor.",
+    fields: [{ name: "dyeableDefaultColor", type: "text", label: "Default color (hex)", def: "#a06540" }],
+    build: (v) => ({ default_color: v.dyeableDefaultColor || "#a06540" }),
+  },
+  {
+    key: "damageAbsorptionEnabled",
+    component: "minecraft:damage_absorption",
+    label: "Damage absorption",
+    detail: "Absorbs damage that would otherwise hit the wearer (requires Durability + Wearable).",
+    fields: [{ name: "damageAbsorptionCauses", type: "text", label: "Absorbable damage causes (comma separated)", placeholder: "fall, magma" }],
+    build: (v) => ({ absorbable_causes: csvToArray(v.damageAbsorptionCauses).length ? csvToArray(v.damageAbsorptionCauses) : ["fall"] }),
+  },
+  {
+    key: "storageItemEnabled",
+    component: "minecraft:storage_item",
+    label: "Storage item (holds other items)",
+    detail: "Lets the item hold its own inventory of other items, like a shulker box.",
+    fields: [
+      { name: "storageMaxSlots", type: "number", label: "Max slots", def: "64" },
+      { name: "storageAllowNested", type: "checkbox", label: "Allow nested storage items inside" },
+      { name: "storageBannedItems", type: "text", label: "Banned item IDs (comma separated)", placeholder: "minecraft:shulker_box" },
+    ],
+    build: (v) => ({
+      max_slots: clampInt(v.storageMaxSlots, 64, 1),
+      allow_nested_storage_items: !!v.storageAllowNested,
+      banned_items: csvToArray(v.storageBannedItems),
+    }),
+  },
+  {
+    key: "bundleInteractionEnabled",
+    component: "minecraft:bundle_interaction",
+    label: "Bundle interaction UI",
+    detail: "Adds the bundle-style tooltip/interactions (requires Storage Item above).",
+    fields: [{ name: "bundleViewableSlots", type: "number", label: "Viewable slots", def: "12" }],
+    build: (v) => ({ num_viewable_slots: clampInt(v.bundleViewableSlots, 12, 1, 64) }),
+  },
+  {
+    key: "tagsEnabled",
+    component: "minecraft:tags",
+    label: "Custom tags",
+    detail: "Attaches arbitrary tags to the item, usable in loot tables/recipes/scripts.",
+    fields: [{ name: "tagsList", type: "text", label: "Tags (comma separated)", placeholder: "minecraft:is_food" }],
+    build: (v) => ({ tags: csvToArray(v.tagsList) }),
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Item behavior-file JSON builder.
 // ---------------------------------------------------------------------------
 
-// `fields` mirrors the item-adder form 1:1 -- see buildItemAdderForm() in
-// app/main.js. Produces a complete, standalone, valid minecraft:item JSON
-// file (never a fragment needing an outer wrapper -- see the commit that
-// fixed exactly that bug in the JSON_SNIPPETS list for why that matters).
+// `fields` mirrors the item-adder form. `fields.components` is a map of
+// { [schemaEntry.key]: { enabled: bool, ...subFieldValues } } for every
+// entry in ITEM_COMPONENT_SCHEMA the user actually ticked on. Produces a
+// complete, standalone, valid minecraft:item JSON file (never a fragment
+// needing an outer wrapper -- see the commit that fixed exactly that bug in
+// the JSON_SNIPPETS list for why that matters).
 function buildItemFileJSON(fields) {
   const components = {};
   if (fields.iconTexture) components["minecraft:icon"] = { texture: fields.iconTexture };
@@ -171,25 +577,17 @@ function buildItemFileJSON(fields) {
   // string until the user also remembers to hand-edit an en_US.lang file.
   if (fields.displayName) components["minecraft:display_name"] = { value: fields.displayName };
   components["minecraft:max_stack_size"] = clampStackSize(fields.maxStackSize);
-  if (fields.handEquipped) components["minecraft:hand_equipped"] = true;
-  if (fields.glint) components["minecraft:foil"] = true;
-  if (fields.food) {
-    components["minecraft:food"] = {
-      nutrition: numberOr(fields.foodNutrition, 4),
-      saturation_modifier: numberOr(fields.foodSaturation, 0.3),
-      can_always_eat: !!fields.foodCanAlwaysEat,
-    };
-    // A food item needs an eat animation/duration to actually be usable in
-    // game, not just declared edible -- easy to forget by hand.
-    components["minecraft:use_animation"] = "eat";
-    components["minecraft:use_duration"] = 1.6;
-  }
-  if (fields.durability) {
-    components["minecraft:durability"] = { max_durability: Math.max(1, Math.round(numberOr(fields.maxDurability, 250))) };
+
+  const chosen = fields.components || {};
+  for (const entry of ITEM_COMPONENT_SCHEMA) {
+    const values = chosen[entry.key];
+    if (!values || !values.enabled) continue;
+    components[entry.component] = entry.build(values);
+    if (entry.extraComponents) Object.assign(components, entry.extraComponents(values));
   }
 
   const description = { identifier: fields.identifier };
-  if (fields.category && fields.category !== "none") {
+  if (fields.category) {
     description.menu_category = { category: fields.category };
   }
 
@@ -231,4 +629,5 @@ window.ContentBuilders = {
   normalizeItemIdentifier,
   buildItemFileJSON,
   mergeItemTextureJson,
+  ITEM_COMPONENT_SCHEMA,
 };

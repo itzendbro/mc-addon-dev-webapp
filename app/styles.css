@@ -572,6 +572,34 @@ code {
 .pas-form-back-row button { background: transparent; border: none; color: var(--text-dim); font-size: 13px; padding: 4px 0; }
 .pas-form-submit-row { margin-top: 18px; display: flex; gap: 8px; justify-content: flex-end; }
 
+/* -- per-component on/off blocks (generic item-component form) -- */
+.pas-component-block { border-bottom: 1px solid var(--border-soft); }
+.pas-component-block:last-child { border-bottom: none; }
+.pas-component-block .pas-form-check { border-bottom: none; align-items: flex-start; }
+.pas-component-label { flex: 1; }
+.pas-component-label label { display: block; font-size: 13.5px; color: var(--text); margin-bottom: 2px; }
+.pas-component-label .pas-form-hint { margin-top: 0; }
+.pas-component-block .pas-form-subfields { padding-left: 2px; padding-bottom: 14px; }
+
+/* -- item icon upload box -- */
+.pas-icon-upload-box {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: 1px dashed var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  border-radius: 10px;
+  padding: 18px 10px;
+  font-size: 13px;
+  text-align: center;
+}
+.pas-icon-upload-box:active { background: var(--bg-active); }
+.pas-icon-upload-box.has-file { border-style: solid; border-color: var(--accent-strong); color: var(--text); }
+.pas-icon-upload-icon { font-size: 26px; }
+
 .pas-toast-host {
   position: fixed;
   left: 50%;

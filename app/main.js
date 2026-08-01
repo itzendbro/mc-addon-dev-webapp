@@ -669,9 +669,61 @@ function initApp(host) {
     contentPanel.appendChild(el("div", { class: "pas-content-panel-body" }, [grid]));
   }
 
-  // Renders the Item adder form. Every field maps 1:1 onto
-  // ContentBuilders.buildItemFileJSON()'s `fields` argument -- see
-  // app/mcContentBuilders.js for exactly what each one produces.
+  // Builds the (indented, initially-hidden) sub-field controls for one
+  // ITEM_COMPONENT_SCHEMA entry, and returns { fieldsEl, readValues() } so
+  // the caller can both render them and read back whatever the user typed
+  // once the form is submitted. Mirrors the small set of field "type"s the
+  // schema uses: text / number / select / checkbox.
+  function buildComponentSubfields(entry) {
+    const inputs = {};
+    const rows = (entry.fields || []).map((f) => {
+      let input;
+      if (f.type === "select") {
+        input = el(
+          "select",
+          { class: "pas-input" },
+          f.options.map(([value, label]) => el("option", { value }, [label]))
+        );
+        if (f.def) input.value = f.def;
+      } else if (f.type === "checkbox") {
+        input = el("input", { type: "checkbox" });
+        if (f.def) input.checked = true;
+      } else {
+        input = el("input", {
+          class: "pas-input",
+          type: f.type === "number" ? "number" : "text",
+          placeholder: f.placeholder || "",
+          inputmode: f.type === "number" ? "decimal" : undefined,
+          step: f.step,
+          autocomplete: "off",
+        });
+        if (f.def !== undefined) input.value = f.def;
+      }
+      inputs[f.name] = { input, type: f.type };
+      if (f.type === "checkbox") {
+        return el("div", { class: "pas-form-check" }, [el("label", {}, [f.label]), input]);
+      }
+      return el("div", { class: "pas-form-row" }, [el("label", {}, [f.label]), input]);
+    });
+    const fieldsEl = el("div", { class: "pas-form-subfields" }, rows);
+    return {
+      fieldsEl,
+      readValues() {
+        const out = {};
+        for (const [name, { input, type }] of Object.entries(inputs)) {
+          out[name] = type === "checkbox" ? input.checked : input.value;
+        }
+        return out;
+      },
+    };
+  }
+
+  // Renders the Item adder form. Identity/Basics fields map onto
+  // ContentBuilders.buildItemFileJSON()'s top-level `fields`; every entry
+  // in ContentBuilders.ITEM_COMPONENT_SCHEMA gets its own on/off checkbox
+  // (with sub-fields revealed once checked) so the form always covers every
+  // official Bedrock item component with zero per-component UI code needed
+  // here -- see app/mcContentBuilders.js for the schema itself.
   function renderItemAdderForm() {
     contentPanel.innerHTML = "";
     contentPanel.appendChild(
@@ -683,7 +735,6 @@ function initApp(host) {
 
     const idInput = el("input", { class: "pas-input", type: "text", placeholder: "custom:magic_sword", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
     const nameInput = el("input", { class: "pas-input", type: "text", placeholder: "Magic Sword", autocomplete: "off" });
-    const iconInput = el("input", { class: "pas-input", type: "text", placeholder: "magic_sword (texture short name)", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
     const categorySelect = el("select", { class: "pas-input" }, [
       el("option", { value: "items" }, ["Items"]),
       el("option", { value: "equipment" }, ["Equipment"]),
@@ -693,28 +744,67 @@ function initApp(host) {
     ]);
     const stackInput = el("input", { class: "pas-input", type: "number", value: "64", min: "1", max: "9999", inputmode: "numeric" });
 
-    const handEquippedCheck = el("input", { type: "checkbox" });
-    const glintCheck = el("input", { type: "checkbox" });
+    // ---- Icon texture: upload a PNG (preferred) or type a short name ----
+    // Uploading writes the actual PNG into the resource pack at
+    // textures/items/<name>.png (the exact path Bedrock expects), derives
+    // the texture short name from the uploaded filename automatically, and
+    // still lets that name be edited afterwards. Typing a name with no
+    // upload is also still supported for anyone who wants to add the PNG
+    // by hand later (e.g. copy it in via Import Files).
+    let uploadedIconFile = null; // { name, bytesB64 } | null
+    const iconInput = el("input", { class: "pas-input", type: "text", placeholder: "magic_sword (texture short name)", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+    const iconFilePicker = el("input", { type: "file", accept: "image/png,.png", hidden: true });
+    const iconUploadStatus = el("div", { class: "pas-form-hint" }, ["No texture uploaded yet -- the item will use Minecraft's default icon until one is added."]);
+    const iconUploadBox = el(
+      "button",
+      { type: "button", class: "pas-icon-upload-box", onclick: () => iconFilePicker.click() },
+      [
+        el("span", { class: "pas-icon-upload-icon" }, ["\u{1F5BC}\uFE0F"]),
+        el("span", {}, ["Tap to upload item_texture.png"]),
+        el("span", { class: "pas-form-hint" }, ["PNG recommended, 16\u00D716 or any square size."]),
+      ]
+    );
+    iconFilePicker.addEventListener("change", async () => {
+      const file = iconFilePicker.files && iconFilePicker.files[0];
+      iconFilePicker.value = "";
+      if (!file) return;
+      try {
+        const buf = await file.arrayBuffer();
+        uploadedIconFile = { name: file.name, bytesB64: bytesToB64(new Uint8Array(buf)) };
+        const guessedName = ContentBuilders.slugifyIdToken(file.name.replace(/\.[^.]+$/, ""));
+        if (!iconInput.value.trim() && guessedName) iconInput.value = guessedName;
+        iconUploadBox.classList.add("has-file");
+        iconUploadStatus.textContent = `Uploaded "${file.name}" -- will be saved as textures/items/${iconInput.value || guessedName}.png`;
+      } catch (err) {
+        console.error(err);
+        toast("Couldn't read that image file.", { type: "error" });
+      }
+    });
+    iconInput.addEventListener("input", () => {
+      if (uploadedIconFile) {
+        const shortName = ContentBuilders.slugifyIdToken(iconInput.value) || "item";
+        iconUploadStatus.textContent = `Uploaded "${uploadedIconFile.name}" -- will be saved as textures/items/${shortName}.png`;
+      }
+    });
 
-    const foodCheck = el("input", { type: "checkbox" });
-    const foodNutritionInput = el("input", { class: "pas-input", type: "number", value: "4", inputmode: "numeric" });
-    const foodSaturationInput = el("input", { class: "pas-input", type: "number", value: "0.3", step: "0.1", inputmode: "decimal" });
-    const foodAlwaysEatCheck = el("input", { type: "checkbox" });
-    const foodFields = el("div", { class: "pas-form-subfields" }, [
-      el("div", { class: "pas-form-two-col" }, [
-        el("div", { class: "pas-form-row" }, [el("label", {}, ["Nutrition"]), foodNutritionInput]),
-        el("div", { class: "pas-form-row" }, [el("label", {}, ["Saturation modifier"]), foodSaturationInput]),
-      ]),
-      el("div", { class: "pas-form-check" }, [el("label", {}, ["Can always eat (even when full)"]), foodAlwaysEatCheck]),
-    ]);
-    foodCheck.addEventListener("change", () => foodFields.classList.toggle("is-visible", foodCheck.checked));
-
-    const durabilityCheck = el("input", { type: "checkbox" });
-    const maxDurabilityInput = el("input", { class: "pas-input", type: "number", value: "250", min: "1", inputmode: "numeric" });
-    const durabilityFields = el("div", { class: "pas-form-subfields" }, [
-      el("div", { class: "pas-form-row" }, [el("label", {}, ["Max durability"]), maxDurabilityInput]),
-    ]);
-    durabilityCheck.addEventListener("change", () => durabilityFields.classList.toggle("is-visible", durabilityCheck.checked));
+    // ---- Every official item component, generically -----------------
+    const componentReaders = []; // [{ key, enabledCheck, readValues }]
+    const componentRows = ContentBuilders.ITEM_COMPONENT_SCHEMA.map((entry) => {
+      const enabledCheck = el("input", { type: "checkbox" });
+      const { fieldsEl, readValues } = buildComponentSubfields(entry);
+      enabledCheck.addEventListener("change", () => fieldsEl.classList.toggle("is-visible", enabledCheck.checked));
+      componentReaders.push({ key: entry.key, enabledCheck, readValues });
+      return el("div", { class: "pas-component-block" }, [
+        el("div", { class: "pas-form-check" }, [
+          el("div", { class: "pas-component-label" }, [
+            el("label", {}, [entry.label]),
+            el("div", { class: "pas-form-hint" }, [entry.detail]),
+          ]),
+          enabledCheck,
+        ]),
+        fieldsEl,
+      ]);
+    });
 
     const errorEl = el("div", { class: "pas-field-error" });
 
@@ -726,7 +816,13 @@ function initApp(host) {
         el("h3", { class: "pas-form-section-title" }, ["Identity"]),
         el("div", { class: "pas-form-row" }, [el("label", {}, ["Item ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace."])]),
         el("div", { class: "pas-form-row" }, [el("label", {}, ["Display name"]), nameInput]),
-        el("div", { class: "pas-form-row" }, [el("label", {}, ["Icon texture name"]), iconInput, el("div", { class: "pas-form-hint" }, ["Matches a PNG you'll place at textures/items/<name>.png in the resource pack."])]),
+        el("div", { class: "pas-form-row" }, [
+          el("label", {}, ["Item icon (item_texture.png)"]),
+          iconUploadBox,
+          iconFilePicker,
+          el("div", { class: "pas-form-row", style: "margin-top:8px" }, [el("label", {}, ["Texture short name"]), iconInput]),
+          iconUploadStatus,
+        ]),
       ]),
       el("div", { class: "pas-form-section" }, [
         el("h3", { class: "pas-form-section-title" }, ["Basics"]),
@@ -735,12 +831,8 @@ function initApp(host) {
       ]),
       el("div", { class: "pas-form-section" }, [
         el("h3", { class: "pas-form-section-title" }, ["Components"]),
-        el("div", { class: "pas-form-check" }, [el("label", {}, ["Hand equipped (shows as a held model, not flat)"]), handEquippedCheck]),
-        el("div", { class: "pas-form-check" }, [el("label", {}, ["Enchanted glint"]), glintCheck]),
-        el("div", { class: "pas-form-check" }, [el("label", {}, ["Edible (food)"]), foodCheck]),
-        foodFields,
-        el("div", { class: "pas-form-check" }, [el("label", {}, ["Has durability (can be damaged)"]), durabilityCheck]),
-        durabilityFields,
+        el("div", { class: "pas-form-hint", style: "margin-bottom:10px" }, ["Every official Bedrock item component -- tap a switch to reveal its options."]),
+        ...componentRows,
       ]),
       errorEl,
       el("div", { class: "pas-form-submit-row" }, [
@@ -750,20 +842,18 @@ function initApp(host) {
           onclick: () => {
             errorEl.textContent = "";
             try {
+              const components = {};
+              for (const { key, enabledCheck, readValues } of componentReaders) {
+                components[key] = { enabled: enabledCheck.checked, ...readValues() };
+              }
               submitItemAdder({
                 rawIdentifier: idInput.value,
                 displayName: nameInput.value.trim(),
                 iconTexture: ContentBuilders.slugifyIdToken(iconInput.value),
+                iconFile: uploadedIconFile,
                 category: categorySelect.value,
                 maxStackSize: stackInput.value,
-                handEquipped: handEquippedCheck.checked,
-                glint: glintCheck.checked,
-                food: foodCheck.checked,
-                foodNutrition: foodNutritionInput.value,
-                foodSaturation: foodSaturationInput.value,
-                foodCanAlwaysEat: foodAlwaysEatCheck.checked,
-                durability: durabilityCheck.checked,
-                maxDurability: maxDurabilityInput.value,
+                components,
               });
             } catch (err) {
               errorEl.textContent = err.message || String(err);
@@ -793,11 +883,11 @@ function initApp(host) {
     // so this never silently clobbers an existing item with the same name.
     const itemNode = vfs.createFile(desiredPath, json, { isText: true });
 
-    // Resource-pack side: only touch item_texture.json if we actually know
-    // where the resource pack lives AND the user gave us a texture short
-    // name to register -- an item with no icon set is still perfectly
+    // Resource-pack side: only touch item_texture.json / write the PNG if
+    // we actually know where the resource pack lives AND the user gave us
+    // a texture short name -- an item with no icon set is still perfectly
     // valid (it just uses Minecraft's default "missing texture" icon until
-    // one is added later), so this is best-effort, not required.
+    // one is added later), so all of this is best-effort, not required.
     if (rpRoot && fields.iconTexture) {
       const texturePath = joinPath(rpRoot, "textures", "item_texture.json");
       const existing = vfs.get(texturePath);
@@ -807,6 +897,10 @@ function initApp(host) {
         if (editorManager.hasState(texturePath)) editorManager.setContent(texturePath, merged);
       } else {
         vfs.createFile(texturePath, merged, { isText: true });
+      }
+      if (fields.iconFile) {
+        const pngPath = joinPath(rpRoot, "textures", "items", `${fields.iconTexture}.png`);
+        vfs.createFile(pngPath, fields.iconFile.bytesB64, { isText: false });
       }
     }
 
