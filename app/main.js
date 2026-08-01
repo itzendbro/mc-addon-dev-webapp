@@ -633,7 +633,7 @@ function initApp(host) {
     { id: "item", label: "Item", icon: "\u2694\uFE0F", enabled: true, render: renderItemAdderForm },
     { id: "entity", label: "Entity", icon: "\u{1F9DF}", enabled: false },
     { id: "block", label: "Block", icon: "\u{1F9F1}", enabled: false },
-    { id: "sound", label: "Sound", icon: "\u{1F50A}", enabled: false },
+    { id: "sound", label: "Sound", icon: "\u{1F50A}", enabled: true, render: renderSoundAdderForm },
     { id: "splash", label: "Splash", icon: "\u{1F4A6}", enabled: true, render: renderSplashAdderForm },
   ];
 
@@ -1046,6 +1046,247 @@ function initApp(host) {
     toast(createdNew
       ? `Created ${projectName}_BP/_RP and added ${count} splash${count === 1 ? "" : "es"}.`
       : `Added ${count} splash${count === 1 ? "" : "es"}.`);
+  }
+
+  // ---- Sound / Music adder --------------------------------------------
+  // See https://wiki.bedrock.dev/concepts/sounds. Every custom sound (a
+  // one-shot "effect" or a looping "music track") is added to
+  // sound_definitions.json under a short event-name id; a music track
+  // additionally gets a matching entry in music_definitions.json that maps
+  // a trigger name (which biome/menu/game state plays it) to that event.
+  // Only .mp3/.ogg/.wav uploads are ever accepted here -- see
+  // AUDIO_EXTENSIONS/isAudioExt in app/utils.js, the same set already used
+  // everywhere else in this app (import, binary-file preview player, ...).
+  function renderSoundAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add Sound / Music"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    // ---- kind toggle: Sound Effect <-> Music Track ---------------------
+    let kind = "effect";
+    const kindEffectBtn = el("button", { type: "button", class: "pas-toggle-btn is-active" }, ["Sound Effect"]);
+    const kindMusicBtn = el("button", { type: "button", class: "pas-toggle-btn" }, ["Music Track"]);
+    const kindRow = el("div", { class: "pas-toggle-row" }, [kindEffectBtn, kindMusicBtn]);
+
+    // ---- shared fields --------------------------------------------------
+    const eventNameInput = el("input", { class: "pas-input", type: "text", placeholder: "myaddon.magic_chime", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const categorySelect = el(
+      "select",
+      { class: "pas-input" },
+      ["ambient", "block", "bottle", "bucket", "hostile", "music", "neutral", "player", "record", "ui", "weather"].map((c) => el("option", { value: c }, [c]))
+    );
+    categorySelect.value = "neutral";
+
+    // ---- audio upload: mp3/ogg/wav only ---------------------------------
+    const uploadedFiles = []; // [{ name, ext, bytesB64 }]
+    const filePicker = el("input", { type: "file", class: "pas-sound-file-picker", accept: ".mp3,.ogg,.wav,audio/mpeg,audio/ogg,audio/wav", multiple: true, hidden: true });
+    const fileListEl = el("div", { class: "pas-upload-file-list" });
+    const uploadBox = el(
+      "button",
+      { type: "button", class: "pas-icon-upload-box", onclick: () => filePicker.click() },
+      [
+        el("span", { class: "pas-icon-upload-icon" }, ["\u{1F3B5}"]),
+        el("span", {}, ["Tap to upload sound file(s)"]),
+        el("span", { class: "pas-form-hint" }, ["Only .mp3, .ogg and .wav are supported."]),
+      ]
+    );
+    function renderFileList() {
+      fileListEl.innerHTML = "";
+      uploadedFiles.forEach((f, i) => {
+        fileListEl.appendChild(
+          el("div", { class: "pas-upload-file-row" }, [
+            el("span", { class: "pas-upload-file-name" }, [f.name]),
+            el("button", {
+              type: "button",
+              class: "pas-upload-file-remove",
+              "aria-label": "Remove",
+              onclick: () => { uploadedFiles.splice(i, 1); renderFileList(); },
+            }, ["\u2715"]),
+          ])
+        );
+      });
+    }
+    filePicker.addEventListener("change", () => {
+      const files = Array.from(filePicker.files || []);
+      filePicker.value = "";
+      for (const file of files) {
+        const ext = extOf(file.name);
+        if (!isAudioExt(ext)) {
+          toast(`"${file.name}" isn't a supported audio format -- only .mp3, .ogg and .wav work.`, { type: "error" });
+          continue;
+        }
+        file.arrayBuffer().then((buf) => {
+          uploadedFiles.push({ name: file.name, ext, bytesB64: bytesToB64(new Uint8Array(buf)) });
+          uploadBox.classList.add("has-file");
+          renderFileList();
+          if (!eventNameInput.value.trim()) {
+            const guessed = ContentBuilders.slugifyIdToken(file.name.replace(/\.[^.]+$/, ""));
+            if (guessed) eventNameInput.value = `${kind === "music" ? "music" : "custom"}.${guessed}`;
+          }
+        }).catch((err) => {
+          console.error(err);
+          toast("Couldn't read that audio file.", { type: "error" });
+        });
+      }
+    });
+
+    // ---- music-only fields (hidden unless kind === "music") -----------
+    const triggerInput = el("input", { class: "pas-input", type: "text", placeholder: "e.g. desert, nether, menu, creative, or a custom biome name", autocomplete: "off", autocapitalize: "off" });
+    const minDelayInput = el("input", { class: "pas-input", type: "number", value: "60", min: "0", inputmode: "numeric" });
+    const maxDelayInput = el("input", { class: "pas-input", type: "number", value: "180", min: "0", inputmode: "numeric" });
+    const musicFields = el("div", { class: "pas-form-section" }, [
+      el("h3", { class: "pas-form-section-title" }, ["Music Trigger"]),
+      el("div", { class: "pas-form-row" }, [
+        el("label", {}, ["Trigger name"]),
+        triggerInput,
+        el("div", { class: "pas-form-hint" }, ["Which biome/menu/game state plays this track -- matches a music_definitions.json key."]),
+      ]),
+      el("div", { class: "pas-form-two-col" }, [
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Min delay before replay (seconds)"]), minDelayInput]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Max delay before replay (seconds)"]), maxDelayInput]),
+      ]),
+    ]);
+    musicFields.style.display = "none";
+
+    function setKind(newKind) {
+      kind = newKind;
+      kindEffectBtn.classList.toggle("is-active", kind === "effect");
+      kindMusicBtn.classList.toggle("is-active", kind === "music");
+      musicFields.style.display = kind === "music" ? "" : "none";
+      // Music events conventionally live under the "music.xxx" namespace
+      // and use the "music" category -- nudge (but don't force) both when
+      // switching modes so the common case needs zero manual editing,
+      // without clobbering something the user already typed by hand.
+      if (kind === "music") {
+        categorySelect.value = "music";
+        if (eventNameInput.value && !eventNameInput.value.startsWith("music.")) {
+          eventNameInput.value = `music.${eventNameInput.value.replace(/^custom\./, "")}`;
+        }
+      }
+    }
+    kindEffectBtn.addEventListener("click", () => setKind("effect"));
+    kindMusicBtn.addEventListener("click", () => setKind("music"));
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Type"]),
+        kindRow,
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Sound Files"]),
+        el("div", { class: "pas-form-row" }, [
+          el("label", {}, ["Audio file(s)"]),
+          uploadBox,
+          filePicker,
+          fileListEl,
+          el("div", { class: "pas-form-hint" }, ["Add more than one file to have Minecraft pick one at random each time this sound plays."]),
+        ]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Identity"]),
+        el("div", { class: "pas-form-row" }, [
+          el("label", {}, ["Sound event name"]),
+          eventNameInput,
+          el("div", { class: "pas-form-hint" }, ["The short id used to reference this sound elsewhere (entities, particles, /playsound, ...)."]),
+        ]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Category"]), categorySelect]),
+      ]),
+      musicFields,
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              submitSoundAdder({
+                kind,
+                rawEventName: eventNameInput.value,
+                category: categorySelect.value,
+                files: uploadedFiles.slice(),
+                triggerName: triggerInput.value,
+                minDelay: minDelayInput.value,
+                maxDelay: maxDelayInput.value,
+              });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Add Sound"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+    setTimeout(() => eventNameInput.focus(), 60);
+  }
+
+  // Writes the new sound file(s) + sound_definitions.json entry (and, for a
+  // music track, the matching music_definitions.json entry) into the
+  // current project -- creating a brand new BP/RP pair first if the
+  // explorer is completely empty, same as every other adder (see
+  // ensureAddonScaffold in app/mcContentBuilders.js). Sounds are entirely
+  // resource-pack content (playback, not behavior), so this never touches
+  // bpRoot at all, same as the Splash adder.
+  function submitSoundAdder(fields) {
+    if (!fields.files.length) throw new Error("Upload at least one .mp3, .ogg or .wav file.");
+    const eventName = ContentBuilders.slugifyEventName(fields.rawEventName);
+    if (!eventName) throw new Error("Sound event name can't be empty.");
+    if (fields.kind === "music" && !fields.triggerName.trim()) throw new Error("Music tracks need a trigger name (e.g. \"nether\", \"menu\", \"creative\").");
+
+    const { rpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+    const targetRoot = rpRoot ?? "";
+
+    // Write every uploaded audio file into sounds/<event/path>, keeping
+    // each file's own extension -- Bedrock is told the path *without* an
+    // extension in sound_definitions.json and tries whatever's actually
+    // there at runtime, so multiple uploads for the same event (e.g. 3
+    // different .ogg variations to randomize between) each need their own
+    // unique file name to not collide on disk.
+    const soundPaths = fields.files.map((file, i) => {
+      const suffix = fields.files.length > 1 ? `_${i + 1}` : "";
+      const relPath = `sounds/${eventName.replace(/\./g, "/")}${suffix}`;
+      const fullPath = joinPath(targetRoot, `${relPath}.${file.ext}`);
+      vfs.createFile(fullPath, file.bytesB64, { isText: false });
+      return relPath;
+    });
+
+    const soundDefsPath = joinPath(targetRoot, "sounds", "sound_definitions.json");
+    const existingDefs = vfs.get(soundDefsPath);
+    const mergedDefs = ContentBuilders.mergeSoundDefinitionsJson(existingDefs ? existingDefs.content : null, eventName, fields.category, soundPaths);
+    if (existingDefs) {
+      vfs.setContent(soundDefsPath, mergedDefs);
+      if (editorManager.hasState(soundDefsPath)) editorManager.setContent(soundDefsPath, mergedDefs);
+    } else {
+      vfs.createFile(soundDefsPath, mergedDefs, { isText: true });
+    }
+
+    let openPath = soundDefsPath;
+    if (fields.kind === "music") {
+      const musicDefsPath = joinPath(targetRoot, "sounds", "music_definitions.json");
+      const existingMusic = vfs.get(musicDefsPath);
+      const triggerName = ContentBuilders.slugifyIdToken(fields.triggerName);
+      const mergedMusic = ContentBuilders.mergeMusicDefinitionsJson(existingMusic ? existingMusic.content : null, triggerName, eventName, fields.minDelay, fields.maxDelay);
+      if (existingMusic) {
+        vfs.setContent(musicDefsPath, mergedMusic);
+        if (editorManager.hasState(musicDefsPath)) editorManager.setContent(musicDefsPath, mergedMusic);
+      } else {
+        vfs.createFile(musicDefsPath, mergedMusic, { isText: true });
+      }
+      openPath = musicDefsPath;
+    }
+
+    closeContentPanel();
+    openFile(openPath);
+    toast(createdNew ? `Created ${projectName}_BP/_RP and added "${eventName}".` : `Added ${fields.kind === "music" ? "music track" : "sound"} "${eventName}".`);
   }
 
   return () => {

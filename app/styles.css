@@ -613,6 +613,33 @@ code {
 }
 .pas-splash-chip:active { background: var(--bg-active); }
 
+/* -- sound/music adder: kind toggle + multi-file upload list -- */
+.pas-toggle-row { display: flex; gap: 8px; }
+.pas-toggle-btn {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pas-toggle-btn.is-active { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+.pas-upload-file-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.pas-upload-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.pas-upload-file-name { flex: 1; font-size: 12.5px; color: var(--text); word-break: break-all; }
+.pas-upload-file-remove { border: none; background: transparent; color: var(--text-dim); font-size: 14px; flex: none; padding: 2px 4px; }
+.pas-upload-file-remove:active { color: var(--danger); }
+
 .pas-toast-host {
   position: fixed;
   left: 50%;

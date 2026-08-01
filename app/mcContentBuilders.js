@@ -117,6 +117,22 @@ function slugifyIdToken(s) {
     .replace(/^_+|_+$/g, "");
 }
 
+// Sound/music "event name" identifiers (sound_definitions.json /
+// music_definitions.json keys) conventionally use dot-separated segments
+// instead of a colon-separated namespace:name pair (e.g. "music.game",
+// "mob.enderman.stare", "myaddon.magic_chime") -- this keeps each
+// dot-separated segment individually valid (lowercase, underscores) while
+// preserving the segment structure, instead of collapsing the whole string
+// down like slugifyIdToken would (which would turn "myaddon.magic_chime"
+// into a single "myaddon_magic_chime" run and lose the dots entirely).
+function slugifyEventName(s) {
+  return (s || "")
+    .split(".")
+    .map((segment) => slugifyIdToken(segment))
+    .filter(Boolean)
+    .join(".");
+}
+
 // Accepts anything the user typed ("Magic Sword", "magic_sword",
 // "custom:magic_sword", "My Addon:Magic Sword") and normalizes it into a
 // valid `namespace:name` Bedrock identifier, defaulting the namespace to
@@ -658,16 +674,80 @@ function mergeSplashesJson(existingContent, newLines, canMerge) {
   return JSON.stringify(obj, null, 4) + "\n";
 }
 
+// ---------------------------------------------------------------------------
+// Sound / music builder -- see https://wiki.bedrock.dev/concepts/sounds.
+//
+// Every custom sound (a one-shot effect OR a music track) needs an entry in
+// sound_definitions.json mapping a short "sound event" identifier to one or
+// more actual audio file paths (no extension -- Bedrock tries whatever
+// format is actually present next to that path at runtime). A *music*
+// track additionally needs an entry in music_definitions.json mapping a
+// biome/menu/game "trigger name" to the `music.xxx`-style event name that
+// sound_definitions.json just defined, plus how long to wait between plays.
+// Only mp3/ogg/wav are ever accepted as uploads here -- matching this app's
+// existing AUDIO_EXTENSIONS set (app/utils.js) used everywhere else
+// (import, preview player, ...), since those are the only formats a plain
+// <audio> element (and this app's own preview player) can play back for a
+// sanity-check before export; Bedrock itself only actually ships/plays
+// .ogg in its own vanilla packs, but community tooling and Minecraft's
+// resource pack loader both still accept .mp3/.wav additions in practice,
+// and it's not this editor's job to transcode audio.
+// ---------------------------------------------------------------------------
+
+// Merges a new sound_definitions.json entry (bare category + one-or-more
+// paths). `soundPaths` is an array of "sounds/xxx" style paths (no file
+// extension) as accepted by Bedrock. Same "never destroy existing content
+// on a parse failure" fallback as the other merge* helpers above.
+function mergeSoundDefinitionsJson(existingContent, eventName, category, soundPaths) {
+  let obj = null;
+  if (existingContent) {
+    try {
+      const parsed = JSON.parse(existingContent);
+      if (parsed && typeof parsed === "object") obj = parsed;
+    } catch (e) {
+      obj = null;
+    }
+  }
+  if (!obj) obj = { format_version: "1.14.0", sound_definitions: {} };
+  if (!obj.sound_definitions || typeof obj.sound_definitions !== "object") obj.sound_definitions = {};
+  obj.sound_definitions[eventName] = { category: category || "neutral", sounds: soundPaths };
+  return JSON.stringify(obj, null, 4) + "\n";
+}
+
+// Merges a new music_definitions.json entry (trigger name -> event name +
+// min/max replay delay in seconds). Trigger names are free-form (Mojang's
+// own file uses biome names like "desert"/"nether"/"menu"/"creative" --
+// nothing enforces that list, any custom trigger name also works as long
+// as something actually references it, e.g. a custom biome).
+function mergeMusicDefinitionsJson(existingContent, triggerName, eventName, minDelay, maxDelay) {
+  let obj = null;
+  if (existingContent) {
+    try {
+      const parsed = JSON.parse(existingContent);
+      if (parsed && typeof parsed === "object") obj = parsed;
+    } catch (e) {
+      obj = null;
+    }
+  }
+  if (!obj) obj = {};
+  obj[triggerName] = { event_name: eventName, min_delay: clampInt(minDelay, 60, 0), max_delay: clampInt(maxDelay, 180, 0) };
+  return JSON.stringify(obj, null, 4) + "\n";
+}
+
 window.ContentBuilders = {
   allFolderPaths,
   detectPackTypeFromManifestContent,
   findPackRootFolder,
   ensureAddonScaffold,
   slugifyIdToken,
+  slugifyEventName,
   normalizeItemIdentifier,
   buildItemFileJSON,
   mergeItemTextureJson,
   mergeSplashesJson,
+  mergeSoundDefinitionsJson,
+  mergeMusicDefinitionsJson,
   ITEM_COMPONENT_SCHEMA,
 };
+
 
