@@ -620,6 +620,44 @@ function mergeItemTextureJson(existingContent, shortName, rpPackName) {
   return JSON.stringify(obj, null, 4) + "\n";
 }
 
+// ---------------------------------------------------------------------------
+// Splash text builder -- see https://wiki.bedrock.dev/text/splashes.
+// splashes.json lives directly at the resource pack root (not inside a
+// subfolder) and has just two fields: `canMerge` (whether vanilla's own
+// splash texts are also shown alongside the custom ones) and `splashes` (an
+// ordered array of plain strings, each optionally using "§" formatting
+// codes exactly like any other in-game text).
+// ---------------------------------------------------------------------------
+
+// Merges one or more new splash lines into whatever's already in
+// splashes.json (parsed with plain JSON.parse -- same "never destroy
+// existing content on a parse failure" rule as mergeItemTextureJson above:
+// an invalid/missing existing file just starts a fresh, minimal, valid one
+// instead of throwing content away). Skips exact-duplicate lines so
+// re-adding the same splash twice doesn't pad the list with repeats.
+function mergeSplashesJson(existingContent, newLines, canMerge) {
+  let obj = null;
+  if (existingContent) {
+    try {
+      const parsed = JSON.parse(existingContent);
+      if (parsed && typeof parsed === "object") obj = parsed;
+    } catch (e) {
+      obj = null;
+    }
+  }
+  if (!obj) obj = { canMerge: !!canMerge, splashes: [] };
+  if (!Array.isArray(obj.splashes)) obj.splashes = [];
+  // Only touch canMerge when the caller actually passed a value for it --
+  // editing an already-existing splashes.json to add one more line
+  // shouldn't silently flip a setting the user (or a previous session)
+  // deliberately chose, unless they're explicitly changing it this time.
+  if (canMerge !== undefined) obj.canMerge = !!canMerge;
+  for (const line of newLines) {
+    if (!obj.splashes.includes(line)) obj.splashes.push(line);
+  }
+  return JSON.stringify(obj, null, 4) + "\n";
+}
+
 window.ContentBuilders = {
   allFolderPaths,
   detectPackTypeFromManifestContent,
@@ -629,5 +667,7 @@ window.ContentBuilders = {
   normalizeItemIdentifier,
   buildItemFileJSON,
   mergeItemTextureJson,
+  mergeSplashesJson,
   ITEM_COMPONENT_SCHEMA,
 };
+

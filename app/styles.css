@@ -413,6 +413,7 @@ code {
   font-family: var(--font-mono);
 }
 .pas-input:focus { outline: 2px solid var(--accent-strong); }
+.pas-textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
 
 .pas-sheet-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
@@ -599,6 +600,18 @@ code {
 .pas-icon-upload-box:active { background: var(--bg-active); }
 .pas-icon-upload-box.has-file { border-style: solid; border-color: var(--accent-strong); color: var(--text); }
 .pas-icon-upload-icon { font-size: 26px; }
+
+/* -- splash text "\u00A7 formatting code" chip inserter -- */
+.pas-splash-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pas-splash-chip {
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.pas-splash-chip:active { background: var(--bg-active); }
 
 .pas-toast-host {
   position: fixed;

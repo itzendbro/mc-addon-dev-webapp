@@ -630,11 +630,11 @@ function initApp(host) {
   contentScrim.addEventListener("click", closeContentPanel);
 
   const CONTENT_TYPES = [
-    { id: "item", label: "Item", icon: "\u2694\uFE0F", enabled: true },
+    { id: "item", label: "Item", icon: "\u2694\uFE0F", enabled: true, render: renderItemAdderForm },
     { id: "entity", label: "Entity", icon: "\u{1F9DF}", enabled: false },
     { id: "block", label: "Block", icon: "\u{1F9F1}", enabled: false },
     { id: "sound", label: "Sound", icon: "\u{1F50A}", enabled: false },
-    { id: "splash", label: "Splash", icon: "\u{1F4A6}", enabled: false },
+    { id: "splash", label: "Splash", icon: "\u{1F4A6}", enabled: true, render: renderSplashAdderForm },
   ];
 
   function renderContentTypePicker() {
@@ -655,7 +655,7 @@ function initApp(host) {
             class: "pas-content-type-btn",
             onclick: () => {
               if (!t.enabled) return toast(`${t.label} adder is coming soon.`);
-              renderItemAdderForm();
+              t.render();
             },
           },
           [
@@ -910,6 +910,142 @@ function initApp(host) {
     closeContentPanel();
     openFile(itemNode.path);
     toast(createdNew ? `Created ${projectName}_BP/_RP and added "${identifier}".` : `Added item "${identifier}".`);
+  }
+
+  // ---- Splash adder -------------------------------------------------------
+  // See https://wiki.bedrock.dev/text/splashes -- a resource pack's
+  // splashes.json lives directly at the RP root (not inside a subfolder)
+  // and is just `{ canMerge, splashes: [...] }`. Much smaller surface than
+  // the Item adder, so this is a single small form rather than a generic
+  // schema -- one line per splash text, a live "§ formatting code" inserter
+  // (since typing "§" by hand on a phone keyboard is awkward), and the
+  // canMerge toggle.
+  const SPLASH_COLOR_CODES = [
+    ["\u00A70", "Black"], ["\u00A71", "Dark Blue"], ["\u00A72", "Dark Green"], ["\u00A73", "Dark Aqua"],
+    ["\u00A74", "Dark Red"], ["\u00A75", "Dark Purple"], ["\u00A76", "Gold"], ["\u00A77", "Gray"],
+    ["\u00A78", "Dark Gray"], ["\u00A79", "Blue"], ["\u00A7a", "Green"], ["\u00A7b", "Aqua"],
+    ["\u00A7c", "Red"], ["\u00A7d", "Light Purple"], ["\u00A7e", "Yellow"], ["\u00A7f", "White"],
+    ["\u00A7g", "Minecoin Gold"], ["\u00A7l", "Bold"], ["\u00A7o", "Italic"], ["\u00A7r", "Reset"],
+  ];
+
+  function renderSplashAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add Splash Text"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    const linesInput = el("textarea", {
+      class: "pas-input pas-textarea",
+      rows: "5",
+      placeholder: "my custom splash text\nand another one!\n\u00A7cRed \u00A7rand \u00A7agreen \u00A7rsplash text",
+      autocapitalize: "off",
+      spellcheck: "false",
+    });
+    const mergeCheck = el("input", { type: "checkbox" });
+
+    // Tapping a color-code chip inserts it at the textarea's current
+    // cursor position (falling back to the end if nothing's focused) --
+    // this is the "epic" way to type "\u00A7" codes on a phone keyboard
+    // that has no dedicated key for that character at all.
+    const insertAtCursor = (token) => {
+      const start = linesInput.selectionStart ?? linesInput.value.length;
+      const end = linesInput.selectionEnd ?? linesInput.value.length;
+      linesInput.value = linesInput.value.slice(0, start) + token + linesInput.value.slice(end);
+      const newPos = start + token.length;
+      linesInput.focus();
+      linesInput.setSelectionRange(newPos, newPos);
+    };
+    const colorChips = el(
+      "div",
+      { class: "pas-splash-chip-row" },
+      SPLASH_COLOR_CODES.map(([code, label]) =>
+        el("button", { type: "button", class: "pas-splash-chip", title: label, onclick: () => insertAtCursor(code) }, [label])
+      )
+    );
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Splash Text"]),
+        el("div", { class: "pas-form-row" }, [
+          el("label", {}, ["One splash per line"]),
+          linesInput,
+          el("div", { class: "pas-form-hint" }, ["Shown next to the Minecraft logo on the title screen. Supports \u00A7 formatting codes -- tap a chip below to insert one."]),
+        ]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Formatting codes"]), colorChips]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Options"]),
+        el("div", { class: "pas-form-check" }, [
+          el("div", { class: "pas-component-label" }, [
+            el("label", {}, ["Merge with vanilla splash texts"]),
+            el("div", { class: "pas-form-hint" }, ["On: your splashes show alongside Minecraft's own. Off: only yours ever show."]),
+          ]),
+          mergeCheck,
+        ]),
+      ]),
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              submitSplashAdder({
+                lines: linesInput.value.split("\n").map((l) => l.trim()).filter(Boolean),
+                canMerge: mergeCheck.checked,
+              });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Add Splash"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+    setTimeout(() => linesInput.focus(), 60);
+  }
+
+  // Writes/merges the new splash line(s) into the current project's
+  // splashes.json -- creating a brand new BP/RP pair first if the explorer
+  // is completely empty, same as the Item adder (see ensureAddonScaffold in
+  // app/mcContentBuilders.js). splashes.json is resource-pack-only (it's
+  // pure client-side title-screen text, nothing behavior-pack related), so
+  // this never touches bpRoot at all.
+  function submitSplashAdder(fields) {
+    if (!fields.lines.length) throw new Error("Type at least one splash line.");
+
+    const { rpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+    // Same "don't just silently fail" fallback as the Item adder's bpRoot:
+    // if no RP folder could be found/created at all, still write the file
+    // somewhere sensible (the project root) rather than losing the user's
+    // typed text.
+    const targetRoot = rpRoot ?? "";
+    const splashesPath = joinPath(targetRoot, "splashes.json");
+    const existing = vfs.get(splashesPath);
+    const merged = ContentBuilders.mergeSplashesJson(existing ? existing.content : null, fields.lines, fields.canMerge);
+
+    if (existing) {
+      vfs.setContent(splashesPath, merged);
+      if (editorManager.hasState(splashesPath)) editorManager.setContent(splashesPath, merged);
+    } else {
+      vfs.createFile(splashesPath, merged, { isText: true });
+    }
+
+    closeContentPanel();
+    openFile(splashesPath);
+    const count = fields.lines.length;
+    toast(createdNew
+      ? `Created ${projectName}_BP/_RP and added ${count} splash${count === 1 ? "" : "es"}.`
+      : `Added ${count} splash${count === 1 ? "" : "es"}.`);
   }
 
   return () => {
