@@ -636,6 +636,7 @@ function initApp(host) {
     { id: "sound", label: "Sound", icon: "\u{1F50A}", enabled: true, render: renderSoundAdderForm },
     { id: "splash", label: "Splash", icon: "\u{1F4A6}", enabled: true, render: renderSplashAdderForm },
     { id: "function", label: "Function", icon: "\u{1F4DC}", enabled: true, render: renderFunctionAdderForm },
+    { id: "trade", label: "Trade", icon: "\u{1F4B0}", enabled: true, render: renderTradeAdderForm },
   ];
 
   function renderContentTypePicker() {
@@ -1669,6 +1670,213 @@ function initApp(host) {
     closeContentPanel();
     openFile(functionNode.path);
     toast(createdNew ? `Created ${projectName}_BP/_RP and added "${functionPath}".` : `Added function "${functionPath}".`);
+  }
+
+  // ---- Trade adder -----------------------------------------------------
+  // See https://learn.microsoft.com/minecraft/creator/documents/createtradetable
+  // and https://wiki.bedrock.dev/loot/trading-behavior. A trade table
+  // itself is just a JSON file of trade tiers, but making it actually DO
+  // anything requires a whole trading entity wired up around it -- so this
+  // adder always creates a fresh, ready-to-use trading mob (a
+  // minecraft:trade_table + minecraft:behavior.trade_with_player pair,
+  // correctly placed inside a component_group added via
+  // minecraft:entity_spawned rather than directly in `components`, which
+  // is a documented footgun that blanks out every entity's trading UI --
+  // see buildTradingEntityBehaviorJSON's own comment in
+  // app/mcContentBuilders.js) alongside the trade table itself, rather
+  // than trying to parse/mutate an arbitrary existing entity file (too
+  // risky to safely automate for a hand-authored file that could have any
+  // shape).
+  function renderTradeAdderForm() {
+    contentPanel.innerHTML = "";
+    contentPanel.appendChild(
+      el("div", { class: "pas-content-panel-header" }, [
+        el("h2", {}, ["Add Trade"]),
+        el("button", { class: "pas-icon-btn", "aria-label": "Close", onclick: closeContentPanel }, ["\u2715"]),
+      ])
+    );
+
+    const idInput = el("input", { class: "pas-input", type: "text", placeholder: "custom:merchant", autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+    const nameInput = el("input", { class: "pas-input", type: "text", placeholder: "Merchant", autocomplete: "off" });
+
+    // ---- tier list: each tier is an XP threshold + a list of trades -----
+    const tiers = []; // [{ el, xpInput, trades: [{ el, wants: [...], gives: [...] }] }]
+
+    function buildItemRow(labelText, placeholder) {
+      const itemInput = el("input", { class: "pas-input", type: "text", placeholder, autocapitalize: "off", autocomplete: "off", spellcheck: "false" });
+      const minInput = el("input", { class: "pas-input", type: "number", value: "1", min: "1", inputmode: "numeric" });
+      const maxInput = el("input", { class: "pas-input", type: "number", value: "1", min: "1", inputmode: "numeric" });
+      const priceInput = el("input", { class: "pas-input", type: "number", value: "0.05", step: "0.05", inputmode: "decimal" });
+      const rowEl = el("div", { class: "pas-loot-row" }, [
+        el("div", { class: "pas-form-row" }, [el("label", {}, [labelText]), itemInput]),
+        el("div", { class: "pas-form-two-col" }, [
+          el("div", { class: "pas-form-row" }, [el("label", {}, ["Min count"]), minInput]),
+          el("div", { class: "pas-form-row" }, [el("label", {}, ["Max count"]), maxInput]),
+        ]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Price multiplier (demand scaling)"]), priceInput]),
+      ]);
+      return { rowEl, itemInput, minInput, maxInput, priceInput };
+    }
+
+    function buildTradeBlock(tierTrades, onRemove) {
+      const wants = [buildItemRow("Villager wants", "minecraft:wheat")];
+      const gives = [buildItemRow("Villager gives", "minecraft:emerald")];
+      const wantsListEl = el("div", {}, [wants[0].rowEl]);
+      const givesListEl = el("div", {}, [gives[0].rowEl]);
+      const maxUsesInput = el("input", { class: "pas-input", type: "number", value: "12", min: "1", inputmode: "numeric" });
+      const traderExpInput = el("input", { class: "pas-input", type: "number", value: "1", min: "0", inputmode: "numeric" });
+      const rewardExpCheck = el("input", { type: "checkbox" });
+      rewardExpCheck.checked = true;
+
+      const addWantBtn = el("button", { type: "button", class: "pas-btn pas-btn-ghost", onclick: () => {
+        const row = buildItemRow("Villager wants (additional item)", "minecraft:book");
+        wants.push(row);
+        wantsListEl.appendChild(row.rowEl);
+      } }, ["+ Add another \"wants\" item"]);
+
+      const tradeBlockEl = el("div", { class: "pas-loot-row" }, [
+        el("h4", { style: "margin:0 0 8px;font-size:12.5px;color:var(--text-dim);" }, ["Trade"]),
+        wantsListEl,
+        addWantBtn,
+        givesListEl,
+        el("div", { class: "pas-form-two-col" }, [
+          el("div", { class: "pas-form-row" }, [el("label", {}, ["Max uses before restock"]), maxUsesInput]),
+          el("div", { class: "pas-form-row" }, [el("label", {}, ["Trader XP gained"]), traderExpInput]),
+        ]),
+        el("div", { class: "pas-form-check" }, [el("label", {}, ["Player gets XP orbs from this trade"]), rewardExpCheck]),
+        el("button", { type: "button", class: "pas-loot-row-remove", onclick: onRemove }, ["Remove trade"]),
+      ]);
+      return { el: tradeBlockEl, wants, gives, maxUsesInput, traderExpInput, rewardExpCheck };
+    }
+
+    function buildTierBlock(index) {
+      const trades = [];
+      const tradesListEl = el("div", {});
+      const xpInput = el("input", { class: "pas-input", type: "number", value: index === 0 ? "0" : String(index * 10), min: "0", inputmode: "numeric" });
+      function addTrade() {
+        const trade = buildTradeBlock(trades, () => {
+          const idx = trades.indexOf(trade);
+          if (idx !== -1) trades.splice(idx, 1);
+          trade.el.remove();
+        });
+        trades.push(trade);
+        tradesListEl.appendChild(trade.el);
+      }
+      addTrade();
+      const addTradeBtn = el("button", { type: "button", class: "pas-btn pas-btn-ghost", onclick: addTrade }, ["+ Add another trade to this tier"]);
+      const tierEl = el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, [index === 0 ? "Tier 1 (always unlocked)" : `Tier ${index + 1}`]),
+        index === 0
+          ? null
+          : el("div", { class: "pas-form-row" }, [el("label", {}, ["Villager XP required to unlock this tier"]), xpInput]),
+        tradesListEl,
+        addTradeBtn,
+      ]);
+      return { el: tierEl, xpInput, trades };
+    }
+
+    const tiersListEl = el("div", {});
+    function addTier() {
+      const tier = buildTierBlock(tiers.length);
+      tiers.push(tier);
+      tiersListEl.appendChild(tier.el);
+    }
+    addTier();
+    const addTierBtn = el("button", { type: "button", class: "pas-btn pas-btn-ghost", onclick: addTier }, ["+ Add another tier (unlocks with XP)"]);
+
+    const errorEl = el("div", { class: "pas-field-error" });
+
+    const body = el("div", { class: "pas-content-panel-body" }, [
+      el("div", { class: "pas-form-back-row" }, [
+        el("button", { onclick: renderContentTypePicker }, ["\u2039 Content types"]),
+      ]),
+      el("div", { class: "pas-form-section" }, [
+        el("h3", { class: "pas-form-section-title" }, ["Trading Entity"]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Entity ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace. A whole new trading mob is created for this trade table."])]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Display name shown while trading"]), nameInput]),
+      ]),
+      tiersListEl,
+      addTierBtn,
+      errorEl,
+      el("div", { class: "pas-form-submit-row" }, [
+        el("button", { class: "pas-btn pas-btn-ghost", onclick: closeContentPanel }, ["Cancel"]),
+        el("button", {
+          class: "pas-btn pas-btn-primary",
+          onclick: () => {
+            errorEl.textContent = "";
+            try {
+              const tierFields = tiers.map((tier) => ({
+                xpRequired: tier.xpInput.value,
+                trades: tier.trades.map((trade) => ({
+                  wants: trade.wants.map((w) => ({ item: w.itemInput.value, minCount: w.minInput.value, maxCount: w.maxInput.value, priceMultiplier: w.priceInput.value })),
+                  gives: trade.gives.map((g) => ({ item: g.itemInput.value, minCount: g.minInput.value, maxCount: g.maxInput.value })),
+                  maxUses: trade.maxUsesInput.value,
+                  traderExp: trade.traderExpInput.value,
+                  rewardExp: trade.rewardExpCheck.checked,
+                })),
+              }));
+              submitTradeAdder({
+                rawIdentifier: idInput.value,
+                displayName: nameInput.value.trim(),
+                tiers: tierFields,
+              });
+            } catch (err) {
+              errorEl.textContent = err.message || String(err);
+            }
+          },
+        }, ["Add Trade"]),
+      ]),
+    ]);
+    contentPanel.appendChild(body);
+    setTimeout(() => idInput.focus(), 60);
+  }
+
+  // Writes the new trading entity's behavior file (BP), its trade table
+  // (BP), and a minimal client entity file (RP, same default-humanoid
+  // fallback as the Entity adder) into whatever add-on project is
+  // currently in the explorer -- creating a brand new BP/RP pair first if
+  // the explorer is completely empty, same as every other adder (see
+  // ensureAddonScaffold in app/mcContentBuilders.js). The RP file is
+  // included (rather than leaving the trader with no visual definition at
+  // all, the way an entity with zero RP file would be completely invisible
+  // and non-interactable) so the trader works immediately after adding it;
+  // the toast still points the user at the Entity adder's texture upload
+  // if they want a real custom look instead of the placeholder.
+  function submitTradeAdder(fields) {
+    const identifier = ContentBuilders.normalizeNamespacedIdentifier(fields.rawIdentifier, "Entity ID");
+    const shortName = identifier.split(":")[1];
+
+    const hasAnyRealTrade = fields.tiers.some((tier) =>
+      tier.trades.some((t) => t.wants.some((w) => w.item && w.item.trim()) && t.gives.some((g) => g.item && g.item.trim()))
+    );
+    if (!hasAnyRealTrade) throw new Error("Add at least one complete trade (an item it wants and an item it gives).");
+
+    const { bpRoot, rpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
+
+    const tradeTableRefPath = joinPath("trading", `${shortName}.json`);
+    const tradeTableFullPath = joinPath(bpRoot, tradeTableRefPath);
+    const tradeTableJson = ContentBuilders.buildTradeTableJSON(fields.tiers);
+    vfs.createFile(tradeTableFullPath, tradeTableJson, { isText: true });
+
+    const behaviorJson = ContentBuilders.buildTradingEntityBehaviorJSON({ identifier, displayName: fields.displayName, tradeTablePath: tradeTableRefPath });
+    const behaviorPath = joinPath(bpRoot, "entities", `${shortName}.json`);
+    // createFile() already picks a unique "name (1).json" style path on its
+    // own if `behaviorPath` is taken (see VFS.uniquePath in app/fs.js) --
+    // so this never silently clobbers an existing entity with the same
+    // name.
+    const behaviorNode = vfs.createFile(behaviorPath, behaviorJson, { isText: true });
+
+    if (rpRoot) {
+      const clientJson = ContentBuilders.buildEntityClientJSON({ identifier, displayName: fields.displayName });
+      const clientPath = joinPath(rpRoot, "entity", `${shortName}.entity.json`);
+      vfs.createFile(clientPath, clientJson, { isText: true });
+    }
+
+    closeContentPanel();
+    openFile(tradeTableFullPath);
+    toast(createdNew
+      ? `Created ${projectName}_BP/_RP and a "${identifier}" trader with its trade table. Use the Entity adder's texture upload for a custom look.`
+      : `Added trader "${identifier}" and its trade table. Use the Entity adder's texture upload for a custom look.`);
   }
 
   // ---- Sound / Music adder --------------------------------------------

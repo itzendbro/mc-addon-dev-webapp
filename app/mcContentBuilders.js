@@ -1418,6 +1418,131 @@ function buildLootTableJSON(drops) {
 }
 
 // ---------------------------------------------------------------------------
+// Trade table builder -- see
+// https://learn.microsoft.com/minecraft/creator/documents/createtradetable
+// and https://wiki.bedrock.dev/loot/trade-tables. A trade table is an
+// un-versioned, un-namespaced JSON object of "tiers" (villager XP levels --
+// tier 1 is always unlocked regardless of total_exp_required), each
+// containing "trades" (a flat list here -- this app deliberately always
+// emits the simpler flat `trades` array per tier rather than nesting a
+// `groups` layer of randomized alternatives, since a hand-authored custom
+// trader almost always wants every listed trade to actually be offered,
+// not have some of them randomly hidden -- the full groups/num_to_select
+// grammar is still perfectly valid Bedrock JSON that a user can hand-edit
+// in on top of what this generates, same "cover the common case, not
+// the entire grammar" tradeoff as buildLootTableJSON above).
+//
+// `tiers` is an array of { xpRequired, trades: [...] }, where each trade
+// is { wants: [{item, quantity, priceMultiplier}, ...], gives: [{item,
+// quantity}, ...], maxUses, rewardExp }. A trade's `wants`/`gives` accept
+// more than one item (Bedrock supports multi-item trades, e.g. book +
+// emeralds for an enchanted item) so each is an array here, not a single
+// object.
+function buildTradeTableJSON(tiers) {
+  function buildTradeItem(item) {
+    const out = { item: item.item.trim() };
+    const min = clampInt(item.minCount, 1, 1);
+    const max = clampInt(item.maxCount, 1, 1);
+    out.quantity = min === max ? min : { min: Math.min(min, max), max: Math.max(min, max) };
+    if (item.priceMultiplier !== undefined && item.priceMultiplier !== "") {
+      out.price_multiplier = numberOr(item.priceMultiplier, 0.05);
+    }
+    return out;
+  }
+
+  const builtTiers = (tiers || [])
+    .map((tier) => {
+      const trades = (tier.trades || [])
+        .filter((t) => t.wants.some((w) => w.item && w.item.trim()) && t.gives.some((g) => g.item && g.item.trim()))
+        .map((t) => {
+          const trade = {
+            wants: t.wants.filter((w) => w.item && w.item.trim()).map(buildTradeItem),
+            gives: t.gives.filter((g) => g.item && g.item.trim()).map(buildTradeItem),
+          };
+          trade.max_uses = clampInt(t.maxUses, 12, 1);
+          trade.trader_exp = clampInt(t.traderExp, 1, 0);
+          trade.reward_exp = t.rewardExp !== false;
+          return trade;
+        });
+      return { trades, xpRequired: clampInt(tier.xpRequired, 0, 0) };
+    })
+    .filter((tier) => tier.trades.length > 0);
+
+  const root = {
+    tiers: builtTiers.map((tier, i) => {
+      const out = { trades: tier.trades };
+      // Even though the very first tier is always unlocked regardless of
+      // this value (per Mojang's own docs), still write total_exp_required
+      // explicitly for every tier including the first -- an explicit "0"
+      // is clearer to read/edit by hand afterwards than an implicit
+      // default, and matches every official example file (see
+      // butcher_trades.json/farmer_trades.json samples).
+      out.total_exp_required = i === 0 ? 0 : tier.xpRequired;
+      return out;
+    }),
+  };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// Builds a small, ready-to-use trading entity's BEHAVIOR file (BP) that
+// actually uses a trade table -- see
+// https://wiki.bedrock.dev/loot/trading-behavior. Bedrock has a real,
+// documented footgun here: putting minecraft:trade_table (or
+// minecraft:economy_trade_table) + minecraft:behavior.trade_with_player
+// directly in the root `components` object causes blank trading UIs for
+// EVERY entity of that type in the world (a known engine bug, not a typo
+// in the docs) -- they must instead live inside a `component_groups` entry
+// that's added via an event (conventionally minecraft:entity_spawned, so
+// it's applied the moment the entity exists). This mirrors that exact
+// structure rather than the naive "just put it in components" version a
+// lot of outdated tutorials still show.
+function buildTradingEntityBehaviorJSON(fields) {
+  const shortName = fields.identifier.split(":")[1];
+  const traderGroupName = `${fields.identifier.split(":")[0]}:trader`;
+
+  const components = {
+    "minecraft:type_family": { family: ["mob", shortName] },
+    "minecraft:health": { value: 20, max: 20 },
+    "minecraft:collision_box": { width: 0.6, height: 1.9 },
+    "minecraft:physics": {},
+    "minecraft:nameable": {},
+    "minecraft:movement": { value: 0.25 },
+    "minecraft:movement.basic": {},
+    "minecraft:navigation.walk": { can_path_over_water: true, avoid_water: false },
+    "minecraft:jump.static": {},
+    "minecraft:behavior.random_stroll": { priority: 6, speed_multiplier: 1.0 },
+    "minecraft:behavior.look_at_player": { priority: 7, look_distance: 6 },
+  };
+
+  const root = {
+    format_version: "1.21.80",
+    "minecraft:entity": {
+      description: {
+        identifier: fields.identifier,
+        is_spawnable: true,
+        is_summonable: true,
+        is_experimental: false,
+      },
+      component_groups: {
+        [traderGroupName]: {
+          "minecraft:trade_table": {
+            display_name: fields.displayName || "Trading",
+            table: fields.tradeTablePath,
+            new_screen: true,
+          },
+          "minecraft:behavior.trade_with_player": { priority: 1 },
+        },
+      },
+      components,
+      events: {
+        "minecraft:entity_spawned": { add: { component_groups: [traderGroupName] } },
+      },
+    },
+  };
+  return JSON.stringify(root, null, 4) + "\n";
+}
+
+// ---------------------------------------------------------------------------
 // Splash text builder -- see https://wiki.bedrock.dev/text/splashes.
 // splashes.json lives directly at the resource pack root (not inside a
 // subfolder) and has just two fields: `canMerge` (whether vanilla's own
@@ -1638,6 +1763,8 @@ window.ContentBuilders = {
   buildEntityBehaviorJSON,
   buildEntityClientJSON,
   buildLootTableJSON,
+  buildTradeTableJSON,
+  buildTradingEntityBehaviorJSON,
   slugifyFunctionPath,
   buildFunctionFileContent,
   mergeTickJson,
