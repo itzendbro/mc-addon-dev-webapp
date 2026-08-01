@@ -1542,6 +1542,120 @@ function buildTradingEntityBehaviorJSON(fields) {
   return JSON.stringify(root, null, 4) + "\n";
 }
 
+// Derives the behavior pack root folder an entity file lives under, purely
+// from its own path -- every Bedrock entity behavior file lives at
+// "<bpRoot>/entities/<...>.json" (possibly nested further under
+// entities/), so this just returns everything before the "entities"
+// segment. Used so trading can be attached to an existing entity file
+// using ITS OWN pack's root (and therefore write a correctly-relative
+// minecraft:trade_table "table" path into ITS OWN pack), rather than
+// assuming it's necessarily the same BP folder `ensureAddonScaffold`
+// would separately detect by naming convention -- those normally agree in
+// a typical single-BP project, but deriving it directly from the actual
+// file being edited is strictly more correct and costs nothing extra.
+// Returns null if the path doesn't contain an "entities" segment at all
+// (not a standard entity file location), in which case the caller should
+// fall back to whatever `ensureAddonScaffold` already found.
+function bpRootFromEntityFilePath(path) {
+  const segments = path.split("/");
+  const idx = segments.indexOf("entities");
+  if (idx === -1) return null;
+  return segments.slice(0, idx).join("/");
+}
+
+// Looks for an existing behavior-pack entity FILE (a "minecraft:entity"
+// JSON, not a client_entity/resource-pack one) whose own
+// description.identifier exactly matches `identifier`, anywhere in the
+// project. Used by the Trade adder to decide whether an Entity ID the user
+// typed refers to something that already exists (in which case trading
+// should be attached to THAT file) versus something brand new (in which
+// case a whole new trading mob is created, same as before). Returns the
+// VFS file node, or null if nothing matches.
+function findEntityFileByIdentifier(vfs, identifier) {
+  for (const node of vfs.allFiles()) {
+    if (node.ext !== "json" || !node.isText) continue;
+    let obj;
+    try {
+      obj = JSON.parse(node.content ?? "");
+    } catch (e) {
+      continue; // not valid JSON right now -- skip rather than error out
+    }
+    const entity = obj && obj["minecraft:entity"];
+    if (entity && entity.description && entity.description.identifier === identifier) {
+      return node;
+    }
+  }
+  return null;
+}
+
+// Merges trading behavior into an EXISTING entity's behavior-file JSON
+// (rather than building a brand new file from scratch, the way
+// buildTradingEntityBehaviorJSON does for a new entity) -- adds a new
+// component_group carrying minecraft:trade_table +
+// minecraft:behavior.trade_with_player, and wires it in via the
+// minecraft:entity_spawned event, WITHOUT touching any of the entity's
+// other existing components/component_groups/events. Same documented
+// "component_groups + event, never directly in components" safety
+// requirement as buildTradingEntityBehaviorJSON above -- see
+// https://wiki.bedrock.dev/loot/trading-behavior.
+//
+// If minecraft:entity_spawned already has some other "add" logic (e.g. the
+// entity already spawns with a different component group, or uses
+// "sequence"/"randomize" instead of a plain "add"), this deliberately
+// still ONLY appends to an existing plain `add.component_groups` array --
+// it never overwrites/replaces a more complex existing event structure it
+// doesn't fully understand, since guessing wrong there could silently
+// break the entity's existing spawn behavior. In that case the trader
+// group is still created and available, it just needs to be added to
+// the event manually (the returned `needsManualEventWiring` flag tells
+// the caller to say so).
+function mergeTradeIntoEntityBehaviorJSON(existingContent, fields) {
+  let obj;
+  try {
+    obj = JSON.parse(existingContent);
+  } catch (e) {
+    throw new Error("That entity's behavior file isn't valid JSON right now, so trading can't be safely added to it.");
+  }
+  const entity = obj && obj["minecraft:entity"];
+  if (!entity) throw new Error("That file doesn't look like a behavior-pack entity (no \"minecraft:entity\" root key).");
+
+  const namespace = fields.identifier.split(":")[0];
+  const baseGroupName = `${namespace}:trader`;
+  if (!entity.component_groups || typeof entity.component_groups !== "object") entity.component_groups = {};
+  // Avoid clobbering a same-named component group the entity might already
+  // have defined for something unrelated -- pick a fresh name the same way
+  // VFS.uniquePath avoids clobbering files.
+  let groupName = baseGroupName;
+  let i = 1;
+  while (entity.component_groups[groupName]) {
+    groupName = `${baseGroupName}_${i}`;
+    i++;
+  }
+  entity.component_groups[groupName] = {
+    "minecraft:trade_table": {
+      display_name: fields.displayName || "Trading",
+      table: fields.tradeTablePath,
+      new_screen: true,
+    },
+    "minecraft:behavior.trade_with_player": { priority: 1 },
+  };
+
+  if (!entity.events || typeof entity.events !== "object") entity.events = {};
+  const spawnedEvent = entity.events["minecraft:entity_spawned"];
+  let needsManualEventWiring = false;
+  if (!spawnedEvent) {
+    entity.events["minecraft:entity_spawned"] = { add: { component_groups: [groupName] } };
+  } else if (spawnedEvent.add && Array.isArray(spawnedEvent.add.component_groups)) {
+    spawnedEvent.add.component_groups.push(groupName);
+  } else {
+    // Something more complex already lives on this event (sequence/
+    // randomize/filters/...) -- don't guess, leave it untouched.
+    needsManualEventWiring = true;
+  }
+
+  return { content: JSON.stringify(obj, null, 4) + "\n", groupName, needsManualEventWiring };
+}
+
 // ---------------------------------------------------------------------------
 // Splash text builder -- see https://wiki.bedrock.dev/text/splashes.
 // splashes.json lives directly at the resource pack root (not inside a
@@ -1765,6 +1879,9 @@ window.ContentBuilders = {
   buildLootTableJSON,
   buildTradeTableJSON,
   buildTradingEntityBehaviorJSON,
+  bpRootFromEntityFilePath,
+  findEntityFileByIdentifier,
+  mergeTradeIntoEntityBehaviorJSON,
   slugifyFunctionPath,
   buildFunctionFileContent,
   mergeTickJson,

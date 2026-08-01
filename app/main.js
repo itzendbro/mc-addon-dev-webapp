@@ -1792,7 +1792,7 @@ function initApp(host) {
       ]),
       el("div", { class: "pas-form-section" }, [
         el("h3", { class: "pas-form-section-title" }, ["Trading Entity"]),
-        el("div", { class: "pas-form-row" }, [el("label", {}, ["Entity ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace. A whole new trading mob is created for this trade table."])]),
+        el("div", { class: "pas-form-row" }, [el("label", {}, ["Entity ID"]), idInput, el("div", { class: "pas-form-hint" }, ["namespace:name -- defaults to \"custom:\" if you skip the namespace. If this matches an entity already in your addon, trading is added to it; otherwise a whole new trading mob is created."])]),
         el("div", { class: "pas-form-row" }, [el("label", {}, ["Display name shown while trading"]), nameInput]),
       ]),
       tiersListEl,
@@ -1831,17 +1831,21 @@ function initApp(host) {
     setTimeout(() => idInput.focus(), 60);
   }
 
-  // Writes the new trading entity's behavior file (BP), its trade table
-  // (BP), and a minimal client entity file (RP, same default-humanoid
-  // fallback as the Entity adder) into whatever add-on project is
-  // currently in the explorer -- creating a brand new BP/RP pair first if
-  // the explorer is completely empty, same as every other adder (see
-  // ensureAddonScaffold in app/mcContentBuilders.js). The RP file is
-  // included (rather than leaving the trader with no visual definition at
-  // all, the way an entity with zero RP file would be completely invisible
-  // and non-interactable) so the trader works immediately after adding it;
-  // the toast still points the user at the Entity adder's texture upload
-  // if they want a real custom look instead of the placeholder.
+  // Writes the trade table (BP) and wires it up to a trading entity --
+  // EITHER by attaching trading behavior to an entity that ALREADY exists
+  // in the project with the typed identifier (if one is found), OR by
+  // creating a brand new trading mob from scratch (behavior file + a
+  // minimal client entity file, RP, same default-humanoid fallback as the
+  // Entity adder) if nothing with that identifier exists yet.
+  //
+  // This two-path behavior fixes a real bug from this feature's first
+  // version: it used to ALWAYS create a new entity file regardless of
+  // whether the typed ID already belonged to something in the project --
+  // so typing the identifier of an entity you'd already added (e.g. via
+  // the Entity adder) silently produced a second, disconnected
+  // "name (1).json" file instead of actually making your existing entity
+  // able to trade, which is what "already in the addon" so clearly implies
+  // should happen instead.
   function submitTradeAdder(fields) {
     const identifier = ContentBuilders.normalizeNamespacedIdentifier(fields.rawIdentifier, "Entity ID");
     const shortName = identifier.split(":")[1];
@@ -1851,6 +1855,49 @@ function initApp(host) {
     );
     if (!hasAnyRealTrade) throw new Error("Add at least one complete trade (an item it wants and an item it gives).");
 
+    const existingEntityNode = ContentBuilders.findEntityFileByIdentifier(vfs, identifier);
+
+    if (existingEntityNode) {
+      // ---- Path A: attach trading to the entity that's already there ----
+      const bpRoot = ContentBuilders.bpRootFromEntityFilePath(existingEntityNode.path) ?? "";
+      const tradeTableRefPath = joinPath("trading", `${shortName}.json`);
+      const tradeTableFullPath = joinPath(bpRoot, tradeTableRefPath);
+      const tradeTableJson = ContentBuilders.buildTradeTableJSON(fields.tiers);
+      // The trade table itself can safely just be (re)written outright --
+      // unlike the entity's own behavior file, there's no pre-existing
+      // content of a *different* trade table to lose here for this exact
+      // identifier/path combination the first time this runs; a second run
+      // against the same entity intentionally replaces its old trade table
+      // with the newly-edited one rather than merging two separate tables
+      // together, which wouldn't have a sensible combined meaning anyway.
+      const existingTable = vfs.get(tradeTableFullPath);
+      if (existingTable) {
+        vfs.setContent(tradeTableFullPath, tradeTableJson);
+        if (editorManager.hasState(tradeTableFullPath)) editorManager.setContent(tradeTableFullPath, tradeTableJson);
+      } else {
+        vfs.createFile(tradeTableFullPath, tradeTableJson, { isText: true });
+      }
+
+      let mergeResult;
+      try {
+        mergeResult = ContentBuilders.mergeTradeIntoEntityBehaviorJSON(existingEntityNode.content ?? "", { identifier, displayName: fields.displayName, tradeTablePath: tradeTableRefPath });
+      } catch (err) {
+        throw new Error(`Found an existing "${identifier}" entity, but couldn't safely add trading to it: ${err.message}`);
+      }
+      vfs.setContent(existingEntityNode.path, mergeResult.content);
+      if (editorManager.hasState(existingEntityNode.path)) editorManager.setContent(existingEntityNode.path, mergeResult.content);
+
+      closeContentPanel();
+      openFile(existingEntityNode.path);
+      toast(
+        mergeResult.needsManualEventWiring
+          ? `Added trading to existing "${identifier}" -- it already has custom spawn-event logic, so add "${mergeResult.groupName}" to its minecraft:entity_spawned event by hand.`
+          : `Added trading to your existing "${identifier}" entity.`
+      );
+      return;
+    }
+
+    // ---- Path B: nothing with that identifier exists -- make a new trader ----
     const { bpRoot, rpRoot, createdNew } = ContentBuilders.ensureAddonScaffold(vfs, projectName);
 
     const tradeTableRefPath = joinPath("trading", `${shortName}.json`);
@@ -1862,8 +1909,10 @@ function initApp(host) {
     const behaviorPath = joinPath(bpRoot, "entities", `${shortName}.json`);
     // createFile() already picks a unique "name (1).json" style path on its
     // own if `behaviorPath` is taken (see VFS.uniquePath in app/fs.js) --
-    // so this never silently clobbers an existing entity with the same
-    // name.
+    // so this never silently clobbers an existing entity FILE with the
+    // same name (a rare edge case: same short filename, but its actual
+    // identifier field doesn't match, so findEntityFileByIdentifier()
+    // above correctly didn't treat it as "the same entity").
     const behaviorNode = vfs.createFile(behaviorPath, behaviorJson, { isText: true });
 
     if (rpRoot) {
