@@ -4,13 +4,14 @@
 // This is the "engine" half of the port (data.js is the "data" half, see
 // its own header comment) -- it turns the ported JSON_SNIPPETS/JS_SNIPPETS
 // dictionaries into a real @codemirror/autocomplete CompletionSource and
-// registers it globally via EditorState.languageData, exactly the same
-// technique Acode's own built-in `localWordCompletions`/Emmet completions
-// use internally (see acode.require("codemirror") below) -- so this
-// plugin's Bedrock-aware suggestions show up in Acode's normal completion
-// popup (arrow keys to navigate, Tab/Enter to accept, Ctrl-Space to
-// force-open) right alongside Acode's other completion sources, rather
-// than needing a separate/competing popup UI.
+// keeps it attached to whatever editor view is currently active, via
+// EditorState.languageData -- the same technique Acode's own built-in
+// `localWordCompletions`/Emmet completions use internally (see
+// acode.require("codemirror") below) -- so this plugin's Bedrock-aware
+// suggestions show up in Acode's normal completion popup (arrow keys to
+// navigate, Tab/Enter to accept, Ctrl-Space to force-open) right alongside
+// Acode's other completion sources, rather than needing a separate/
+// competing popup UI.
 //
 // Snippet placeholders (the exact ${1:default}/$0 syntax already used by
 // every entry in data.js -- see mcCompletions.js in the parent webapp repo
@@ -18,6 +19,40 @@
 // CodeMirror 6 `snippet()` completions, so Tab/Shift-Tab actually walks
 // through each placeholder in order and the whole thing behaves exactly
 // like a native VS Code snippet, not just a static text insert.
+//
+// -----------------------------------------------------------------------
+// IMPORTANT lesson learned from v1.0.0 (didn't work at all -- fixed here):
+//
+// Acode's editor does NOT keep one long-lived CodeMirror state that
+// extensions get permanently folded into. Every time a file is opened or
+// switched (see Acode's own src/lib/editorManager.js -- applyFileToEditor()
+// -> editor.setState(...)), Acode builds a *brand new* EditorState from
+// scratch and swaps it in wholesale. Any extension appended via
+// StateEffect.appendConfig against the CURRENT state (which is what
+// v1.0.0 did, once, at plugin-init time) is silently gone the instant the
+// user opens or switches to any file afterwards -- there was never a
+// moment where suggestions could have worked beyond whatever single file
+// happened to already be open when the plugin loaded.
+//
+// v1.0.0 also tried registering via acode.require("editorLanguages"), but
+// that API's register() adds a *language mode* (matched against a file's
+// extension to decide which single mode "owns" a file) -- registering one
+// with an empty extensions list, as v1.0.0 did to sneak an extension in
+// without actually being a real language, means it can never be selected
+// as any file's mode, so its extension is never actually applied to
+// anything, ever.
+//
+// The fix: re-append the extension to whatever the *current* active
+// editor view is, every time a file is loaded/switched/created (via
+// editorManager's own documented event list -- see
+// https://docs.acode.app/docs/global-apis/editor-manager), AND on a
+// cheap periodic safety-net interval, since not every way Acode can swap
+// in a fresh state necessarily fires one of those events (e.g. a pane
+// being split, or an Acode version emitting slightly different event
+// names than expected). appendIfMissing() below is a no-op (just one
+// cheap languageDataAt() lookup) whenever the extension is already
+// present, so the interval costs effectively nothing in the common case.
+// -----------------------------------------------------------------------
 //
 // Deliberately plain global-scope JS (no `import`/`export`, no bundler) --
 // same "no build tooling" constraint as the parent Pocket Addon Studio
@@ -37,9 +72,14 @@ var PLUGIN_ID = "com.pocketaddonstudio.bedrock-autocomplete";
 var cmAutocomplete = null; // @codemirror/autocomplete namespace
 var cmState = null; // @codemirror/state namespace
 
-// The single extension instance registered with Acode's CodeMirror setup.
+// The single extension instance kept attached to whatever editor view is
+// currently active -- see the big comment above for why this has to be
+// actively re-attached rather than registered once.
 var registeredExtension = null;
-var registeredWithEditorLanguages = false;
+
+// Bookkeeping so unmount() can cleanly undo everything this plugin set up.
+var eventHandler = null;
+var pollIntervalId = null;
 
 // ---------------------------------------------------------------------------
 // Loads data.js (the ported snippet dictionaries) as a plain <script> tag
@@ -210,7 +250,6 @@ function bedrockCompletionSource(context) {
   };
 }
 
-
 // ---------------------------------------------------------------------------
 // Resolves the *active* file's path/name in a way that's resilient across
 // Acode's Ace-era and CodeMirror-era plugin APIs (see
@@ -238,6 +277,35 @@ function safeRequire(name) {
     return window.acode ? window.acode.require(name) : null;
   } catch (error) {
     return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Keeps registeredExtension attached to every editor pane's CURRENT state.
+// Cheap to call repeatedly: languageDataAt() is a plain lookup, and
+// dispatch() is skipped entirely once the extension is already present, so
+// calling this from several different triggers (events + a timer) is safe
+// and never does redundant work in the common case where nothing changed.
+// ---------------------------------------------------------------------------
+function appendToViewIfMissing(view) {
+  if (!view || typeof view.dispatch !== "function" || !view.state || !registeredExtension) return;
+  try {
+    const already = view.state.languageDataAt("autocomplete", 0).indexOf(bedrockCompletionSource) !== -1;
+    if (already) return;
+    view.dispatch({ effects: cmState.StateEffect.appendConfig.of(registeredExtension) });
+  } catch (error) {
+    // Never let a bad view/state (e.g. one mid-teardown) throw out of an
+    // event handler or timer tick.
+  }
+}
+
+function attachToAllOpenEditors() {
+  const em = window.editorManager;
+  if (!em) return;
+  appendToViewIfMissing(em.editor);
+  const panes = em.panes;
+  if (Array.isArray(panes)) {
+    panes.forEach((pane) => appendToViewIfMissing(pane && pane.editor));
   }
 }
 
@@ -274,96 +342,44 @@ async function init(baseUrl) {
     return;
   }
 
-  // A single global extension (EditorState.languageData.of(...)) applies
-  // to every open file/language, same technique Acode's own built-in
-  // localWordCompletions()/Emmet completions use internally -- the source
-  // function itself is what narrows suggestions down per-file (see
-  // bedrockCompletionSource's own comment above), so this is safe to
-  // register once, globally, for the whole editor's lifetime rather than
-  // needing to re-register per file/language.
   registeredExtension = cmState.EditorState.languageData.of(() => [
     { autocomplete: bedrockCompletionSource },
   ]);
 
-  const editorLanguages = safeRequire("editorLanguages");
-  if (editorLanguages && typeof editorLanguages.register === "function") {
-    // editorLanguages.register() is Acode's own documented, versioned API
-    // for adding CodeMirror extensions that should apply broadly (see
-    // https://docs.acode.app/docs/utilities/ace-modes) -- registering a
-    // dedicated zero-file-extension-matching "mode" here is a light abuse
-    // of that API (this plugin isn't really a language mode), but it's
-    // the only officially documented hook this Acode version exposes for
-    // injecting a standing CodeMirror extension from a plugin without
-    // reaching into editorManager internals, and its loader return value
-    // (an Extension) is applied exactly like any other registered
-    // language's extension. An empty extensions/aliases list means it
-    // never actually gets *selected* as a file's language mode -- it only
-    // exists so its loader's returned extension gets folded into the
-    // editor.
-    try {
-      editorLanguages.register(
-        "bedrock-autocomplete-data",
-        [],
-        "Minecraft Bedrock Autocomplete (internal)",
-        async () => registeredExtension,
-      );
-      registeredWithEditorLanguages = true;
-    } catch (error) {
-      console.warn("[Minecraft Bedrock Autocomplete] editorLanguages.register() failed, falling back to direct dispatch.", error);
-    }
-  }
+  // Attach immediately to whatever's already open right now.
+  attachToAllOpenEditors();
 
-  if (!registeredWithEditorLanguages) {
-    // Fallback for Acode builds that don't expose editorLanguages (or
-    // whose register() call above failed for some other reason): append
-    // the extension straight onto every currently-open editor pane via
-    // StateEffect.appendConfig. This mirrors the exact append pattern
-    // used by CodeMirror's own configuration examples
-    // (https://codemirror.net/examples/config/#compartments) for adding
-    // an extension after the editor has already been created.
-    appendExtensionToAllOpenEditors();
-  }
-}
-
-// NOTE: this fallback only reaches editor panes that already exist at
-// plugin-init time -- a pane created later via a split (see
-// https://docs.acode.app/docs/global-apis/editor-manager's splitPane
-// methods) after this ran would not automatically pick up the extension.
-// This is expected to be a non-issue in practice: every Acode build new
-// enough to expose the CodeMirror packages this plugin needs at all
-// (v1.12+, see plugin.json's minVersionCode) also exposes editorLanguages,
-// so the primary path above is what actually runs almost always -- this
-// fallback exists purely as defensive best-effort for the narrow gap
-// between "has CodeMirror" and "has editorLanguages" landing in the same
-// Acode release.
-function appendExtensionToAllOpenEditors() {
+  // Re-attach every time a file is opened/switched/created -- these are
+  // exactly the situations where Acode swaps in a brand new EditorState
+  // that doesn't know about our extension yet (see the big comment at the
+  // top of this file for why that happens).
   const em = window.editorManager;
-  if (!em || !registeredExtension) return;
-  const panes = em.panes && em.panes.length ? em.panes : [em];
-  panes.forEach((pane) => {
-    const view = pane && pane.editor;
-    if (!view || typeof view.dispatch !== "function") return;
-    try {
-      view.dispatch({ effects: cmState.StateEffect.appendConfig.of(registeredExtension) });
-    } catch (error) {
-      console.warn("[Minecraft Bedrock Autocomplete] Failed to attach completion source to an editor pane.", error);
-    }
-  });
+  if (em && typeof em.on === "function") {
+    eventHandler = () => attachToAllOpenEditors();
+    em.on(["switch-file", "file-loaded", "new-file", "add-folder"], eventHandler);
+  }
+
+  // Safety net: some state-swap paths might not fire any of the events
+  // above (a pane split, a future Acode version renaming/adding events,
+  // ...), so also just check periodically. appendToViewIfMissing() is a
+  // no-op whenever the extension is already attached, so this costs
+  // effectively nothing.
+  pollIntervalId = setInterval(attachToAllOpenEditors, 1500);
 }
 
 function unmount() {
-  if (registeredWithEditorLanguages) {
-    const editorLanguages = safeRequire("editorLanguages");
-    try {
-      if (editorLanguages && editorLanguages.unregister) {
-        editorLanguages.unregister("bedrock-autocomplete-data");
-      }
-    } catch (error) {
-      // best-effort cleanup only
-    }
+  const em = window.editorManager;
+  if (em && eventHandler && typeof em.off === "function") {
+    em.off(["switch-file", "file-loaded", "new-file", "add-folder"], eventHandler);
   }
+  eventHandler = null;
+
+  if (pollIntervalId) {
+    clearInterval(pollIntervalId);
+    pollIntervalId = null;
+  }
+
   registeredExtension = null;
-  registeredWithEditorLanguages = false;
   cmAutocomplete = null;
   cmState = null;
 }
