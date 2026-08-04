@@ -32,6 +32,16 @@ each placeholder, just like VS Code).
 - **Magic triggers.** Type `!mbp` or `!mrp` anywhere to insert a complete,
   ready-to-edit Behavior/Resource Pack `manifest.json` (with fresh random
   UUIDs already filled in), or `!uuid` to insert a single fresh UUID v4.
+- **Live error & warning highlighting (new in 1.1.0).** JSON files get real
+  syntax-error squiggles the moment your JSON becomes invalid (missing
+  comma, trailing comma, unmatched brace, ...), plus a couple of Bedrock
+  -specific sanity checks: a `"uuid"` field still left as the literal
+  placeholder text `"uuid"` from a snippet, and a `manifest.json` with two
+  `"modules"` entries that accidentally share the same `"type"`.
+- **Fast and lightweight.** No language server, no network calls, no
+  schema-validation library -- completions and diagnostics are plain,
+  synchronous JavaScript over a small in-memory dictionary, so there's no
+  extra editor lag on a phone.
 
 ## How it works
 
@@ -44,11 +54,11 @@ and Tab moves to the next one.
 
 ## Requirements
 
-Acode version 292+ with the CodeMirror 6 editor engine (Acode migrated
-from Ace to CodeMirror in v1.12; on an older Ace-based Acode build this
-plugin installs cleanly but stays inactive rather than throwing an error,
-since Ace and CodeMirror 6 completion APIs aren't compatible with each
-other).
+Acode v1.12.0 (versionCode 970) or newer -- the release that migrated
+Acode's editor engine from Ace to CodeMirror 6. This plugin depends
+entirely on CodeMirror 6's completion/lint APIs and cannot work on an
+older Ace-based Acode build; on such a build it installs cleanly but
+stays inactive rather than throwing an error.
 
 ## Where the data comes from
 
