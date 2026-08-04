@@ -5,8 +5,11 @@ by [Pocket Addon Studio](../) to the [Acode](https://acode.app) code
 editor -- hundreds of official Bedrock JSON tags (manifest, entity, block,
 item, particle, recipe, animation/render controllers, sounds, texture list
 files, and more) plus a set of `@minecraft/server` scripting API snippets,
-all as real CodeMirror snippet completions (Tab/Shift-Tab walks through
-each placeholder, just like VS Code).
+as real snippet completions (Tab/Shift-Tab walks through each placeholder,
+just like VS Code) on **both** of Acode's editor engines -- the newer
+CodeMirror 6 engine and the older Ace engine (still very commonly the one
+actually running on real installs, including Play Store/F-Droid builds
+that haven't picked up Acode's CodeMirror migration yet).
 
 ## What you get
 
@@ -54,11 +57,15 @@ and Tab moves to the next one.
 
 ## Requirements
 
-Acode v1.12.0 (versionCode 970) or newer -- the release that migrated
-Acode's editor engine from Ace to CodeMirror 6. This plugin depends
-entirely on CodeMirror 6's completion/lint APIs and cannot work on an
-older Ace-based Acode build; on such a build it installs cleanly but
-stays inactive rather than throwing an error.
+Works on both of Acode's editor engines -- the older Ace engine (via
+`ace/ext/language_tools`) and the newer CodeMirror 6 engine (via
+`@codemirror/autocomplete`/`@codemirror/lint`). The plugin detects which
+one your installed Acode build is actually running
+(`editorManager.isCodeMirror`) and wires up the matching native completion
+source automatically -- no configuration needed. Live JSON error/warning
+highlighting is only available on the CodeMirror engine (Ace doesn't
+expose an equivalent API this plugin can hook into); autocomplete works
+identically on both.
 
 ## Where the data comes from
 

@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.2.0
+
+- **Real fix: autocomplete actually works now, including on the Acode
+  build most real users are on.** Every previous version (1.0.0 through
+  1.1.0) only ever tried CodeMirror 6 APIs. That's correct for Acode's
+  newest engine, but a large number of real Acode installs -- Play Store,
+  F-Droid, or any APK that hasn't auto-updated -- are still running
+  Acode's OLDER Ace editor engine, where those CodeMirror APIs simply
+  don't exist. Every previous version correctly detected that and quietly
+  disabled itself rather than crashing (by design, per Acode's own plugin
+  guidelines) -- but from the user's side that's indistinguishable from
+  "the plugin does nothing at all", which is exactly what every "not
+  working" report was actually hitting.
+- This release detects which engine your Acode build is actually running
+  (`editorManager.isCodeMirror`) and wires up a fully native completion
+  source for whichever one it is: a real Ace `ace/ext/language_tools`
+  completer (verified against a real installed `ace-builds` package) on
+  the Ace engine, or the same CodeMirror 6 extension from 1.1.0 on the
+  CodeMirror engine. Both use the exact same underlying Bedrock data and
+  context detection, so suggestions are identical either way.
+- Lowered `minVersionCode` back down to 292 (from 970) since the plugin no
+  longer requires the CodeMirror-only Acode release to function.
+- Live JSON error/warning highlighting (introduced in 1.1.0) remains
+  CodeMirror-only, since Ace doesn't expose an equivalent hookable
+  diagnostics API this plugin can use -- autocomplete works identically on
+  both engines regardless.
+
 ## 1.1.0
 
 - **Fix: autocomplete could still fail to show up in some situations even
