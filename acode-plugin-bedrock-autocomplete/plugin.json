@@ -1,0 +1,17 @@
+{
+  "id": "com.pocketaddonstudio.bedrock-autocomplete",
+  "name": "Minecraft Bedrock Autocomplete",
+  "main": "main.js",
+  "version": "1.0.0",
+  "readme": "readme.md",
+  "icon": "icon.png",
+  "files": ["data.js"],
+  "minVersionCode": 292,
+  "price": 0,
+  "license": "MIT",
+  "changelogs": "changelogs.md",
+  "keywords": ["minecraft", "bedrock", "mcpe", "mcbe", "addon", "autocomplete", "snippets", "json"],
+  "author": {
+    "name": "Pocket Addon Studio"
+  }
+}
