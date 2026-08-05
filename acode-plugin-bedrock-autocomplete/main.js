@@ -321,7 +321,14 @@ function initAceEngine() {
     eventHandler = () => attachAceCompleterToAllOpenEditors();
     em.on(["switch-file", "file-loaded", "new-file", "add-folder"], eventHandler);
   }
-  pollIntervalId = setInterval(attachAceCompleterToAllOpenEditors, 1500);
+  // Kept short (rather than e.g. 1500ms) specifically because the Ace
+  // engine path has no per-file "fresh state" moment to hook the way the
+  // CodeMirror path's EditorState.create patch does -- a slower device
+  // that's slow to fire "switch-file" (see readme.md's Troubleshooting
+  // section for what else affects this, e.g. Android's own keyboard
+  // suggestion/IME overhead) still recovers within this interval either
+  // way.
+  pollIntervalId = setInterval(attachAceCompleterToAllOpenEditors, 800);
 
   return true;
 }

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.1
+
+- Shortened the Ace-engine safety-net re-attach interval from 1500ms to
+  800ms, so a slow file switch on an already-slow device recovers
+  autocomplete a bit sooner.
+- Added a "Troubleshooting: suggestions feel slow/delayed on some phones"
+  section to readme.md covering Acode's own "Keyboard mode" setting (the
+  actual fix for input lag caused by Android keyboards like Gboard running
+  their own suggestion engine on top of the editor), Gboard's own text
+  correction settings, third-party keyboard apps, and Acode's "Live
+  autocompletion" toggle. No plugin code change was possible for the
+  underlying cause -- it's a phone keyboard/OS-level input latency issue,
+  not something this plugin (or any Acode plugin) can control from inside
+  `main.js`.
+
 ## 1.2.0
 
 - **Real fix: autocomplete actually works now, including on the Acode
